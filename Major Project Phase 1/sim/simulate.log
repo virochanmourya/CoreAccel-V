@@ -1,0 +1,44 @@
+Time resolution is 1 ps
+[Cycle 15000] PC=0 | IF_instr=00500093 | stall=0 | mac_busy=0
+[Cycle 25000] PC=4 | IF_instr=00a00113 | stall=0 | mac_busy=0
+[Cycle 35000] PC=8 | IF_instr=0000100b | stall=0 | mac_busy=0
+[Cycle 45000] PC=12 | IF_instr=0020800b | stall=0 | mac_busy=0
+[Cycle 55000] PC=16 | IF_instr=0000218b | stall=0 | mac_busy=0
+[Cycle 65000] PC=20 | IF_instr=0010800b | stall=0 | mac_busy=0
+[Cycle 75000] PC=20 | IF_instr=0010800b | stall=0 | mac_busy=1
+[Cycle 85000] PC=20 | IF_instr=0010800b | stall=0 | mac_busy=1
+[Cycle 95000] PC=20 | IF_instr=0010800b | stall=0 | mac_busy=1
+[Cycle 105000] PC=20 | IF_instr=0010800b | stall=0 | mac_busy=0
+[Cycle 115000] PC=24 | IF_instr=0000220b | stall=0 | mac_busy=0
+[Cycle 125000] PC=28 | IF_instr=0000100b | stall=0 | mac_busy=0
+[Cycle 135000] PC=28 | IF_instr=0000100b | stall=0 | mac_busy=1
+[Cycle 145000] PC=28 | IF_instr=0000100b | stall=0 | mac_busy=1
+[Cycle 155000] PC=28 | IF_instr=0000100b | stall=0 | mac_busy=1
+[Cycle 165000] PC=28 | IF_instr=0000100b | stall=0 | mac_busy=0
+[Cycle 175000] PC=32 | IF_instr=0000228b | stall=0 | mac_busy=0
+[Cycle 185000] PC=36 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 195000] PC=40 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 205000] PC=44 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 215000] PC=48 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 225000] PC=52 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 235000] PC=56 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 245000] PC=60 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 255000] PC=64 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 265000] PC=68 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 275000] PC=72 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 285000] PC=76 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 295000] PC=80 | IF_instr=00000013 | stall=0 | mac_busy=0
+[Cycle 305000] PC=84 | IF_instr=00000013 | stall=0 | mac_busy=0
+
+============================================================
+  32-Bit CoreAccel-V DSP Integration Results
+============================================================
+  [PASS] x1 = 5  (ADDI x1, x0, 5)
+  [PASS] x2 = 10  (ADDI x2, x0, 10)
+  [PASS] x3 = 50  (MAC_READ x3 (5*10))
+  [PASS] x4 = 75  (MAC_READ x4 (50 + 5*5))
+  [PASS] x5 = 0  (MAC_READ x5 (After MAC_CLEAR))
+============================================================
+  >>> ALL 5 TESTS PASSED! PIPELINE IS PERFECT! <<<
+============================================================
+$finish called at time : 315 ns : File "C:/Users/viroc/Coding/Verilog/Major_Pipeline/Major_Pipeline.srcs/sim_1/imports/sim/cpu_pipeline_tb.sv" Line 80
