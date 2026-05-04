@@ -1,0 +1,230 @@
+Chronologic VCS simulator copyright 1991-2025
+Contains Synopsys proprietary information.
+Compiler version X-2025.06-SP1_Full64; Runtime version X-2025.06-SP1_Full64;  May  4 14:17 2026
+
+ VCS Coverage Metrics Release X-2025.06-SP1_Full64 Copyright (c) 1991-2025 by Synopsys Inc.
+[Cycle 15000] PC=0x00 | instr=80000137 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 25000] PC=0x04 | instr=00700093 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 35000] PC=0x08 | instr=00112023 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 45000] PC=0x0c | instr=00d00713 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 55000] PC=0x10 | instr=00e12223 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 65000] PC=0x14 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=1 tcm_addra=0
+[Cycle 75000] PC=0x18 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 85000] PC=0x1c | instr=00012183 | stall=0 | mac_busy=0 | tcm_wea=1 tcm_addra=1
+[Cycle 95000] PC=0x20 | instr=00600213 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 105000] PC=0x24 | instr=0000100b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 115000] PC=0x28 | instr=00000293 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 125000] PC=0x2c | instr=0052000b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 135000] PC=0x30 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 145000] PC=0x34 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 155000] PC=0x34 | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 165000] PC=0x34 | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 175000] PC=0x34 | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 185000] PC=0x34 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 195000] PC=0x38 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 205000] PC=0x3c | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 215000] PC=0x40 | instr=0000330b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 225000] PC=0x44 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 235000] PC=0x48 | instr=06300a13 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 245000] PC=0x4c | instr=00412783 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 255000] PC=0x50 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=24
+[Cycle 265000] PC=0x54 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 275000] PC=0x58 | instr=00b00393 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 285000] PC=0x5c | instr=00712423 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 295000] PC=0x60 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=2
+[Cycle 305000] PC=0x64 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=2
+[Cycle 315000] PC=0x68 | instr=00300413 | stall=0 | mac_busy=0 | tcm_wea=1 tcm_addra=2
+[Cycle 325000] PC=0x6c | instr=0000100b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 335000] PC=0x70 | instr=00800493 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 345000] PC=0x74 | instr=0094000b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 355000] PC=0x78 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=2
+[Cycle 365000] PC=0x7c | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=2
+[Cycle 375000] PC=0x7c | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=2
+[Cycle 385000] PC=0x7c | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=0
+[Cycle 395000] PC=0x7c | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=0
+[Cycle 405000] PC=0x7c | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 415000] PC=0x80 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 425000] PC=0x84 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 435000] PC=0x88 | instr=0000350b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 445000] PC=0x8c | instr=06400593 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 455000] PC=0x90 | instr=0000100b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 465000] PC=0x94 | instr=0052000b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=25
+[Cycle 475000] PC=0x98 | instr=03700593 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 485000] PC=0x9c | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 495000] PC=0x9c | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 505000] PC=0x9c | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 515000] PC=0x9c | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 525000] PC=0x9c | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 535000] PC=0xa0 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=13
+[Cycle 545000] PC=0xa4 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 555000] PC=0xa8 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 565000] PC=0xac | instr=0000360b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 575000] PC=0xb0 | instr=0000100b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 585000] PC=0xb4 | instr=0052000b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 595000] PC=0xb8 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 605000] PC=0xbc | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 615000] PC=0xbc | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 625000] PC=0xbc | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 635000] PC=0xbc | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=1
+[Cycle 645000] PC=0xbc | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=1
+[Cycle 655000] PC=0xc0 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 665000] PC=0xc4 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 675000] PC=0xc8 | instr=0094000b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 685000] PC=0xcc | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 695000] PC=0xd0 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=2
+[Cycle 705000] PC=0xd0 | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=2
+[Cycle 715000] PC=0xd0 | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=2
+[Cycle 725000] PC=0xd0 | instr=00000013 | stall=0 | mac_busy=1 | tcm_wea=0 tcm_addra=2
+[Cycle 735000] PC=0xd0 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=2
+[Cycle 745000] PC=0xd4 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 755000] PC=0xd8 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 765000] PC=0xdc | instr=0000368b | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 775000] PC=0xe0 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 785000] PC=0xe4 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 795000] PC=0xe8 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 805000] PC=0xec | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 815000] PC=0xf0 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 825000] PC=0xf4 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 835000] PC=0xf8 | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 845000] PC=0xfc | instr=00000013 | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 855000] PC=0x100 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 865000] PC=0x104 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=0
+[Cycle 875000] PC=0x108 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 885000] PC=0x10c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 895000] PC=0x110 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 905000] PC=0x114 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 915000] PC=0x118 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 925000] PC=0x11c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 935000] PC=0x120 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 945000] PC=0x124 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 955000] PC=0x128 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 965000] PC=0x12c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 975000] PC=0x130 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 985000] PC=0x134 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 995000] PC=0x138 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1005000] PC=0x13c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1015000] PC=0x140 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1025000] PC=0x144 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1035000] PC=0x148 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1045000] PC=0x14c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1055000] PC=0x150 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1065000] PC=0x154 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1075000] PC=0x158 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1085000] PC=0x15c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1095000] PC=0x160 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1105000] PC=0x164 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1115000] PC=0x168 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1125000] PC=0x16c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1135000] PC=0x170 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1145000] PC=0x174 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1155000] PC=0x178 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1165000] PC=0x17c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1175000] PC=0x180 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1185000] PC=0x184 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1195000] PC=0x188 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1205000] PC=0x18c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1215000] PC=0x190 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1225000] PC=0x194 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1235000] PC=0x198 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1245000] PC=0x19c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1255000] PC=0x1a0 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1265000] PC=0x1a4 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1275000] PC=0x1a8 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1285000] PC=0x1ac | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1295000] PC=0x1b0 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1305000] PC=0x1b4 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1315000] PC=0x1b8 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1325000] PC=0x1bc | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1335000] PC=0x1c0 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1345000] PC=0x1c4 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1355000] PC=0x1c8 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1365000] PC=0x1cc | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1375000] PC=0x1d0 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1385000] PC=0x1d4 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1395000] PC=0x1d8 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1405000] PC=0x1dc | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1415000] PC=0x1e0 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1425000] PC=0x1e4 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1435000] PC=0x1e8 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1445000] PC=0x1ec | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1455000] PC=0x1f0 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1465000] PC=0x1f4 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1475000] PC=0x1f8 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1485000] PC=0x1fc | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1495000] PC=0x200 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1505000] PC=0x204 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1515000] PC=0x208 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1525000] PC=0x20c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1535000] PC=0x210 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1545000] PC=0x214 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1555000] PC=0x218 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1565000] PC=0x21c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1575000] PC=0x220 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1585000] PC=0x224 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1595000] PC=0x228 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1605000] PC=0x22c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1615000] PC=0x230 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1625000] PC=0x234 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1635000] PC=0x238 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1645000] PC=0x23c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1655000] PC=0x240 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1665000] PC=0x244 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1675000] PC=0x248 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1685000] PC=0x24c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1695000] PC=0x250 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1705000] PC=0x254 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1715000] PC=0x258 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1725000] PC=0x25c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1735000] PC=0x260 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1745000] PC=0x264 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1755000] PC=0x268 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1765000] PC=0x26c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1775000] PC=0x270 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1785000] PC=0x274 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1795000] PC=0x278 | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+[Cycle 1805000] PC=0x27c | instr=xxxxxxxx | stall=0 | mac_busy=0 | tcm_wea=0 tcm_addra=x
+
+============================================================
+  CoreAccel-V TCM Corner Case Verification (SystemVerilog)
+============================================================
+  --- TEST 1: CPU Write + TCM Read-back ---
+  [PASS] x2 = 0x80000000  (LUI: TCM base address)
+  [PASS] x1 = 0x00000007  (x1 = 7 (weight))
+  [PASS] TCM[0] = 0x00000007  (TCM[0] = 7 via SW Port A)
+  [PASS] TCM[1] = 0x0000000d  (TCM[1] = 13 via SW Port A)
+  [PASS] x3 = 0x00000007  (LW x3 = TCM[0] via Port A = 7)
+  --- TEST 2: MAC via TCM Port B (6*7=42) ---
+  [PASS] x4 = 0x00000006  (x4 = 6 (data))
+  [PASS] x6 = 0x0000002a  (MAC_READ_LO: 6*7 = 42)
+  --- TEST 3: BRAM LATENCY STRESS (critical!) ---
+       ADDI x20=99 POISONS ALU result before LW from TCM.
+       If BRAM reads from MEM-stage addr, it reads word 24 (garbage).
+       Only EX-stage addressing produces correct result.
+  [PASS] x20 = 0x00000063  (x20 = 99 (poison ALU value))
+  [PASS] x15 = 0x0000000d  (LW x15 = TCM[1] = 13 (BRAM latency OK))
+  --- TEST 4: Cross-Port RAW Hazard ---
+  [PASS] x7 = 0x0000000b  (x7 = 11 (new weight))
+  [PASS] TCM[2] = 0x0000000b  (TCM[2] = 11 via SW)
+  [PASS] x10 = 0x00000021  (MAC_READ_LO: 3*11 = 33)
+  --- TEST 5: MAC Stall Survival ---
+  [PASS] x11 = 0x00000037  (ADDI survived stall (55))
+  [PASS] x12 = 0x0000002a  (MAC_READ_LO: 6*7 = 42)
+  --- TEST 6: Multi-Accumulate ---
+  [PASS] x13 = 0x0000004b  (MAC_READ_LO: (6*7)+(3*11) = 75)
+
+============================================================
+  >>> ALL 15 TESTS PASSED! <<<
+============================================================
+$finish called from file "testbench.sv", line 107.
+$finish at simulation time              1815000
+
+---------------------------------------------------------------------------
+VCS Coverage Metrics: during simulation line, cond, FSM, branch, tgl was monitored
+---------------------------------------------------------------------------
+
+ Coverage status: End of All Coverages ...
+
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 1815000 ps
+CPU Time:      0.650 seconds;       Data structure size:   0.0Mb
+Mon May  4 14:17:08 2026
