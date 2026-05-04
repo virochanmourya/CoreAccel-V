@@ -1,0 +1,41 @@
+# ==========================================
+# CoreAccel-V Hardware Project .gitignore
+# ==========================================
+
+# 1. AI Assistant Logs
+.rapidgpt/
+.rapidgpt
+chat.rapidgpt
+
+# 2. Simulation & Coverage Reports (Synopsys VCS / General)
+synopsys_coverage_report/
+result.zip
+simv
+simv.daidir/
+simv.vdb/
+csrc/
+urgReport/
+
+# 3. Waveforms & Raw Logs
+*.vcd
+Waveforms.vcd
+*.log
+compile.log
+simulate.log
+*.key
+
+# 4. FPGA Synthesis (Vivado / Xilinx)
+*.jou
+*.pb
+*.wdb
+*.str
+.Xil/
+*.hw/
+*.sim/
+*.ip_user_files/
+*.cache/
+*.runs/
+
+# 5. OS Generated Files
+.DS_Store
+Thumbs.db
