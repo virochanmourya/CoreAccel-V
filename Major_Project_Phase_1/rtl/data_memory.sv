@@ -20,32 +20,35 @@
 // ============================================================================
 
 module data_memory (
-    input  wire        clk,
-    input  wire        mem_read,
-    input  wire        mem_write,
-    input  wire [31:0] addr,
-    input  wire [31:0] write_data,
-    output wire [31:0] read_data
+    input  logic        clk,
+    input  logic        mem_read,
+    input  logic        mem_write,
+    input  logic [31:0] addr,
+    input  logic [31:0] write_data,
+    output logic [31:0] read_data
 );
 
-    // 64 words of 32-bit memory
-    reg [31:0] mem [0:63];
+    // Explicitly demand LUTRAM synthesis for a 0-cycle asynchronous read
+    (* ram_style = "distributed" *) logic [31:0] mem [0:63];
 
     // Initialize to 0 for simulation clarity
-    integer i;
     initial begin
-        for (i = 0; i < 64; i = i + 1)
+        integer i;
+        for (i = 0; i < 64; i = i + 1) begin
             mem[i] = 32'd0;
+        end
     end
 
     // WRITE: synchronous — store on clock edge
-    always @(posedge clk) begin
+    always_ff @(posedge clk) begin
         if (mem_write) begin
+            // Truncate address to word-aligned index
             mem[addr[31:2]] <= write_data;
         end
     end
 
     // READ: combinational — output data immediately
+    // Keeps the 0-cycle latency required by the standard MEM stage
     assign read_data = (mem_read) ? mem[addr[31:2]] : 32'd0;
 
 endmodule
