@@ -183,7 +183,8 @@ module cpu_pipeline_top (
 
     register_file u_regfile (
         .clk        (clk),
-        .reg_write  (mem_wb_reg_write),
+        .reset      (reset),             // <-- YOU FORGOT THIS
+        .we         (mem_wb_reg_write),  // <-- FIXED PORT NAME (was .reg_write)
         .rs1        (id_rs1),
         .rs2        (id_rs2),
         .rd         (mem_wb_rd_addr),

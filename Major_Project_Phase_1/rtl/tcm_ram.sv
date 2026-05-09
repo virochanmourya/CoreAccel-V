@@ -15,8 +15,8 @@
 //
 //   Cross-port behavior: If Port A writes and Port B reads the SAME
 //   address in the SAME cycle, Port B returns the OLD value (standard
-//   Xilinx BRAM behavior). Software must insert a NOP/stall between
-//   a TCM write and a MAC read to the same address.
+//   Xilinx BRAM behavior). NOP/Stall handelled by the CPU pipeline to avoid this RAW hazard.
+//   (Old Logic that the software had to insert NOP/Stalls has been removed).  
 //
 // TARGET: Xilinx Artix-7 — maps to one BRAM36E1 (36Kb) tile
 // ============================================================================
@@ -59,9 +59,13 @@ module tcm_ram #(
         end
     end
 
-    // Port B: Read-Only (1-cycle latency)
+    // Port B: Read-Only (1-cycle latency with RAW bypass)
     always_ff @(posedge clkb) begin
-        doutb <= mem[addrb];
+        if (wea && (addra == addrb)) begin
+            doutb <= dina;       // Forward new data instantly (Bypass)
+        end else begin
+            doutb <= mem[addrb]; // Normal BRAM read
+        end
     end
 
 endmodule
