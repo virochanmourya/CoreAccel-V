@@ -1,0 +1,32 @@
+# ==========================================
+# CoreAccel-V: RTL & Hardware Toolchain Ignore
+# ==========================================
+
+# Icarus Verilog & Simulation Artifacts
+*.vvp
+*.vcd
+*.fst
+*.out
+sim_build/
+
+# Vivado Log & Journal Files
+*.jou
+*.log
+*.str
+*.pb
+*.wdb
+
+# Vivado Heavy Project Directories
+.Xil/
+*.cache/
+*.hw/
+*.sim/
+*.runs/
+*.ip_user_files/
+project_*/
+managed_ip_project/
+
+# OS-Specific Hidden Files
+.DS_Store
+Thumbs.db
+desktop.ini
