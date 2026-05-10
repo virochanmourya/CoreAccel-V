@@ -82,5 +82,7 @@ The project relies on standard Xilinx Vivado flows for physical mapping:
 
 For a deep dive into the memory map, hazard handling, pipeline forwarding architecture, and physical inference strategies, please refer to the primary architectural spec:
 
-* [The CoreAccel-V Architecture](http://docs.google.com/docs/The_CoreAccel_V_Architecture.md)  
-* [Engineering Methodology & Timing](http://docs.google.com/docs/methodology_report.txt)
+* [The CoreAccel-V Architecture](docs/The_CoreAccel_V_Architecture.md)  
+* [Engineering Methodology](docs/methodology_report.txt)
+* [Timing Report](docs/timing_report.txt)
+* [Power Report](docs/Power_report.txt)
