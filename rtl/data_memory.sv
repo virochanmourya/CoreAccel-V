@@ -43,7 +43,7 @@ module data_memory (
     // 64-word address space: only 6 address bits are meaningful
     wire [5:0] word_addr = addr[7:2];
 
-    always_ff @(posedge clk) begin
+    always @(posedge clk) begin
         if (mem_write) begin
             mem[word_addr] <= write_data;
         end

@@ -15,6 +15,8 @@ module hazard_detection_unit (
     input  logic [4:0] id_ex_rd,
     input  logic [4:0] if_id_rs1,
     input  logic [4:0] if_id_rs2,
+    input  logic       rs1_valid,
+    input  logic       rs2_valid,
     output logic       stall
 );
 
@@ -26,7 +28,8 @@ module hazard_detection_unit (
         
         if (id_ex_mem_read 
             && (id_ex_rd != 5'd0) 
-            && ((id_ex_rd == if_id_rs1) || (id_ex_rd == if_id_rs2))) begin
+            && ((rs1_valid && (id_ex_rd == if_id_rs1)) || 
+                (rs2_valid && (id_ex_rd == if_id_rs2)))) begin
             stall = 1'b1;
         end 
         

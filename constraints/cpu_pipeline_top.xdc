@@ -109,5 +109,67 @@ set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
 set_property BITSTREAM.CONFIG.CONFIGRATE 33  [current_design]
 
 ## ============================================================================
+## 7. I2C GPIO — Pmod JA Header (Open-Drain, Active-Low)
+## ============================================================================
+## Directly drives the AD8232 → ADS1115 I2C bus via software bit-bang.
+## Both pins are bidirectional (inout tri) for open-drain signaling.
+## External 2.2kΩ pull-up resistors to 3.3V are REQUIRED on SCL and SDA.
+##
+##   JA Pin 4 (G2) = SCL  |  JA Pin 3 (J2) = SDA
+
+set_property -dict { PACKAGE_PIN G2  IOSTANDARD LVCMOS33  PULLUP TRUE } [get_ports i2c_scl]
+set_property -dict { PACKAGE_PIN J2  IOSTANDARD LVCMOS33  PULLUP TRUE } [get_ports i2c_sda]
+
+## I2C runs at ~100 kHz — 10,000× slower than the 100 MHz fabric clock.
+## These pins have zero timing relevance to internal pipeline closure.
+set_false_path -to   [get_ports i2c_scl]
+set_false_path -to   [get_ports i2c_sda]
+set_false_path -from [get_ports i2c_scl]
+set_false_path -from [get_ports i2c_sda]
+
+## ============================================================================
+## 8. UART TX — Basys 3 Onboard USB-UART Bridge (FTDI FT2232HQ)
+## ============================================================================
+## One-way telemetry output at 115200 baud, 8N1. Directly connected to the
+## FTDI USB-UART chip on the Basys 3 board — no external wiring needed.
+## Pin A18 = RsTx per Digilent official Basys 3 XDC (FPGA transmit direction).
+
+set_property -dict { PACKAGE_PIN A18  IOSTANDARD LVCMOS33 } [get_ports uart_tx_out]
+
+## UART baud rate (115200) is ~1000× slower than fabric clock.
+## No timing relevance to internal pipeline closure.
+set_false_path -to [get_ports uart_tx_out]
+
+## ============================================================================
+## 9. 7-SEGMENT DISPLAY — Basys 3 Onboard 4-Digit Common-Anode
+## ============================================================================
+## Hardware-multiplexed at ~1 kHz. All outputs are active-low.
+## Cathode segment mapping: seg[0]=a, seg[1]=b, ..., seg[6]=g
+## Anode mapping: an[0]=rightmost digit, an[3]=leftmost digit
+
+## Cathode segments (active-low)
+set_property -dict { PACKAGE_PIN W7  IOSTANDARD LVCMOS33 } [get_ports {seg[0]}]
+set_property -dict { PACKAGE_PIN W6  IOSTANDARD LVCMOS33 } [get_ports {seg[1]}]
+set_property -dict { PACKAGE_PIN U8  IOSTANDARD LVCMOS33 } [get_ports {seg[2]}]
+set_property -dict { PACKAGE_PIN V8  IOSTANDARD LVCMOS33 } [get_ports {seg[3]}]
+set_property -dict { PACKAGE_PIN U5  IOSTANDARD LVCMOS33 } [get_ports {seg[4]}]
+set_property -dict { PACKAGE_PIN V5  IOSTANDARD LVCMOS33 } [get_ports {seg[5]}]
+set_property -dict { PACKAGE_PIN U7  IOSTANDARD LVCMOS33 } [get_ports {seg[6]}]
+
+## Decimal point (active-low, tied OFF in RTL)
+set_property -dict { PACKAGE_PIN V7  IOSTANDARD LVCMOS33 } [get_ports dp]
+
+## Anode enables (active-low)
+set_property -dict { PACKAGE_PIN U2  IOSTANDARD LVCMOS33 } [get_ports {an[0]}]
+set_property -dict { PACKAGE_PIN U4  IOSTANDARD LVCMOS33 } [get_ports {an[1]}]
+set_property -dict { PACKAGE_PIN V4  IOSTANDARD LVCMOS33 } [get_ports {an[2]}]
+set_property -dict { PACKAGE_PIN W4  IOSTANDARD LVCMOS33 } [get_ports {an[3]}]
+
+## Display runs at 1 kHz — no timing relevance to internal pipeline.
+set_false_path -to [get_ports {seg[*]}]
+set_false_path -to [get_ports dp]
+set_false_path -to [get_ports {an[*]}]
+
+## ============================================================================
 ## END OF CONSTRAINTS
 ## ============================================================================

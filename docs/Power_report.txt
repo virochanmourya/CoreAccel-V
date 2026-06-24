@@ -1,7 +1,7 @@
 Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
 -------------------------------------------------------------------------------------------------------------------------------------------------
 | Tool Version     : Vivado v.2025.1 (win64) Build 6140274 Thu May 22 00:12:29 MDT 2025
-| Date             : Sun May 10 02:00:07 2026
+| Date             : Thu Jun 25 01:31:46 2026
 | Host             : VIROCHAN_MOURYA running 64-bit major release  (build 9200)
 | Command          : report_power -file C:/Users/viroc/Coding/Verilog/CoreAccel_V_Phase_1/Power_report.txt -name power_1
 | Design           : cpu_pipeline_top
@@ -30,14 +30,14 @@ Table of Contents
 ----------
 
 +--------------------------+--------------+
-| Total On-Chip Power (W)  | 0.121        |
+| Total On-Chip Power (W)  | 0.189        |
 | Design Power Budget (W)  | Unspecified* |
 | Power Budget Margin (W)  | NA           |
-| Dynamic (W)              | 0.050        |
+| Dynamic (W)              | 0.117        |
 | Device Static (W)        | 0.072        |
 | Effective TJA (C/W)      | 5.0          |
-| Max Ambient (C)          | 84.4         |
-| Junction Temperature (C) | 25.6         |
+| Max Ambient (C)          | 84.1         |
+| Junction Temperature (C) | 25.9         |
 | Confidence Level         | Medium       |
 | Setting File             | ---          |
 | Simulation Activity File | ---          |
@@ -52,20 +52,20 @@ Table of Contents
 +--------------------------+-----------+----------+-----------+-----------------+
 | On-Chip                  | Power (W) | Used     | Available | Utilization (%) |
 +--------------------------+-----------+----------+-----------+-----------------+
-| Clocks                   |     0.006 |        3 |       --- |             --- |
-| Slice Logic              |     0.006 |     3088 |       --- |             --- |
-|   LUT as Logic           |     0.005 |     1196 |     20800 |            5.75 |
-|   CARRY4                 |    <0.001 |       68 |      8150 |            0.83 |
-|   Register               |    <0.001 |     1464 |     41600 |            3.52 |
+| Clocks                   |     0.008 |        3 |       --- |             --- |
+| Slice Logic              |     0.026 |     5128 |       --- |             --- |
+|   LUT as Logic           |     0.024 |     2489 |     20800 |           11.97 |
+|   F7/F8 Muxes            |    <0.001 |      678 |     32600 |            2.08 |
+|   CARRY4                 |    <0.001 |      119 |      8150 |            1.46 |
+|   Register               |    <0.001 |     1595 |     41600 |            3.83 |
 |   LUT as Distributed RAM |    <0.001 |       32 |      9600 |            0.33 |
-|   F7/F8 Muxes            |    <0.001 |      192 |     32600 |            0.59 |
-|   Others                 |     0.000 |       13 |       --- |             --- |
-| Signals                  |     0.010 |     2496 |       --- |             --- |
+|   Others                 |     0.000 |       21 |       --- |             --- |
+| Signals                  |     0.038 |     3412 |       --- |             --- |
 | Block RAM                |     0.004 |        1 |        50 |            2.00 |
-| DSPs                     |     0.002 |        4 |        90 |            4.44 |
-| I/O                      |     0.022 |       18 |       106 |           16.98 |
+| DSPs                     |     0.004 |        4 |        90 |            4.44 |
+| I/O                      |     0.037 |       33 |       106 |           31.13 |
 | Static Power             |     0.072 |          |           |                 |
-| Total                    |     0.121 |          |           |                 |
+| Total                    |     0.189 |          |           |                 |
 +--------------------------+-----------+----------+-----------+-----------------+
 
 
@@ -75,9 +75,9 @@ Table of Contents
 +-----------+-------------+-----------+-------------+------------+-------------+-------------+------------+
 | Source    | Voltage (V) | Total (A) | Dynamic (A) | Static (A) | Powerup (A) | Budget (A)  | Margin (A) |
 +-----------+-------------+-----------+-------------+------------+-------------+-------------+------------+
-| Vccint    |       1.000 |     0.037 |       0.027 |      0.010 |       NA    | Unspecified | NA         |
-| Vccaux    |       1.800 |     0.013 |       0.001 |      0.013 |       NA    | Unspecified | NA         |
-| Vcco33    |       3.300 |     0.007 |       0.006 |      0.001 |       NA    | Unspecified | NA         |
+| Vccint    |       1.000 |     0.090 |       0.080 |      0.010 |       NA    | Unspecified | NA         |
+| Vccaux    |       1.800 |     0.014 |       0.001 |      0.013 |       NA    | Unspecified | NA         |
+| Vcco33    |       3.300 |     0.012 |       0.011 |      0.001 |       NA    | Unspecified | NA         |
 | Vcco25    |       2.500 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
 | Vcco18    |       1.800 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
 | Vcco15    |       1.500 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
@@ -144,13 +144,14 @@ Table of Contents
 +------------------+-----------+
 | Name             | Power (W) |
 +------------------+-----------+
-| cpu_pipeline_top |     0.050 |
-|   dsp_core       |     0.006 |
-|   u_ex_mem       |     0.003 |
-|   u_id_ex        |     0.005 |
-|   u_if_id        |     0.001 |
-|   u_mem_wb       |     0.003 |
-|   u_regfile      |     0.004 |
+| cpu_pipeline_top |     0.117 |
+|   dsp_core       |     0.007 |
+|   u_ex_mem       |     0.009 |
+|   u_id_ex        |     0.020 |
+|   u_if_id        |     0.004 |
+|   u_mem_wb       |     0.007 |
+|   u_pc           |     0.017 |
+|   u_regfile      |     0.008 |
 |   u_tcm          |     0.005 |
 +------------------+-----------+
 

@@ -1,14 +1,14 @@
 Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
----------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------
 | Tool Version : Vivado v.2025.1 (win64) Build 6140274 Thu May 22 00:12:29 MDT 2025
-| Date         : Sun May 10 02:00:37 2026
+| Date         : Thu Jun 25 01:32:11 2026
 | Host         : VIROCHAN_MOURYA running 64-bit major release  (build 9200)
-| Command      : report_methodology -name methodology_1 -file C:/Users/viroc/Coding/Verilog/CoreAccel_V_Phase_1/methodology_report.txt
+| Command      : report_methodology -name ultrafast_methodology_1 -file C:/Users/viroc/Coding/Verilog/CoreAccel_V_Phase_1/methodology_report.txt
 | Design       : cpu_pipeline_top
 | Device       : xc7a35tcpg236-1
 | Speed File   : -1
 | Design State : Fully Routed
----------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------
 
 Report Methodology
 

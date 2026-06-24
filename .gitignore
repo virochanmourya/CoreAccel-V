@@ -30,3 +30,13 @@ managed_ip_project/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Firmware Build Artifacts
+*.elf
+*.o
+*.map
+
+# Logs and Temp Files
+serial_log.txt
+$($w.Count)
+

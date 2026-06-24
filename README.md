@@ -1,88 +1,80 @@
-# **CoreAccel-V**
+<div align="center">
+  
+# 🚀 CoreAccel-V 
+**A custom RISC-V SoC Architecture featuring an integrated DSP/MAC unit for hardware-accelerated algorithms.**
 
-**A 5-Stage Pipelined RV32I System-on-Chip with Tightly-Coupled DSP Acceleration**
+</div>
 
-CoreAccel-V is a custom RISC-V soft-core designed to prove that a general-purpose processor can be augmented with a tightly coupled DSP engine and successfully close timing at **100 MHz on a low-cost Xilinx Artix-7 FPGA**.
+## 📊 Architecture Block Diagram
 
-Written entirely in modern **SystemVerilog (IEEE 1800-2017)**, the architecture prioritizes deterministic execution, cycle-accurate physical memory mappings, and strict synthesis equivalency over high-level abstractions.
+<div align="center">
+  <img src="docs/architecture_block_diagram.png" alt="CoreAccel-V Architecture" width="800"/>
+</div>
 
-## **🚀 Key Architectural Features**
+> 🔍 *For a high-resolution version, please see the [Architecture PDF](docs/architecture_block_diagram.pdf).*
 
-* **5-Stage In-Order Pipeline**: Classic IF → ID → EX → MEM → WB datapath with full hazard resolution (data forwarding, load-use stalls, and 1-cycle branch flush penalties).  
-* **64-Bit Saturating MAC Unit**: A dedicated multi-cycle DSP coprocessor integrated directly into the Execute (EX) stage. It maps automatically to Xilinx DSP48E1 hard multiplier slices to accelerate FIR/IIR filters and vector workloads.  
-* **Dual Memory Architecture**:  
-  * **Tightly Coupled Memory (TCM)**: A 4KB True Dual-Port memory mapped to a single Xilinx BRAM36E1 tile. Port A acts as a standard CPU interface, while Port B streams DSP weights directly to the MAC unit with a guaranteed deterministic 1-cycle latency.  
-  * **Data Memory**: Distributed RAM for general-purpose CPU loads and stores, preventing standard memory accesses from stalling the DSP pipeline.  
-* **Zero-Latch Design**: Fully compliant SystemVerilog utilizing strict always\_ff and always\_comb structures to guarantee simulation-to-synthesis parity.
+---
 
-## **🛠 Target Hardware & Utilization**
+## ⚙️ Core Architecture Details
 
-The design is constrained and physically validated for the **Digilent Basys 3 (Xilinx Artix-7 xc7a35tcpg236-1)**.
+* **5-Stage RV32I Pipeline**: In-order execution with full 2-stage (`EX→EX` and `MEM→EX`) data forwarding and hazard detection logic.
+* **CUSTOM-0 DSP MAC**: A dedicated 4-cycle Multiply-Accumulate coprocessor featuring a 72-bit signed accumulator with hardware saturation to prevent overflow during heavy FIR/IIR filtering.
+* **Tightly Coupled Memory (TCM)**: Dual-port BRAM allowing simultaneous CPU execution and 1-cycle lookahead weight streaming directly into the DSP engine.
 
-| Resource | Used | Available | Utilization |
-| :---- | :---- | :---- | :---- |
-| **LUT6** | \~1,200 | 20,800 | \~5.8% |
-| **Flip-Flops** | \~1,500 | 41,600 | \~3.6% |
-| **BRAM36E1** | 1 | 50 | 2.0% |
-| **DSP48E1** | 4 | 90 | 4.4% |
-| **Max Freq** | 100 MHz | \- | \- |
+---
 
-## **📂 Repository Structure**
+## 🌟 Current Milestone: FPGA ECG Monitoring System
 
-CoreAccel-V/  
-├── rtl/               \# Synthesizable SystemVerilog IP core files  
-├── sim/               \# Verification environments, testbenches, and memory payloads  
-├── docs/              \# Detailed microarchitecture specs and timing reports  
-├── constraints/       \# Xilinx XDC physical constraint files  
-└── scripts/           \# Automation scripts for synthesis and simulation
+CoreAccel-V has been successfully implemented and validated on physical FPGA hardware. For a detailed breakdown of the exact hardware structures running on the FPGA right now, see the [Current Architecture Report](docs/CURRENT_ARCHITECTURE.md).
 
-## **🧮 Custom DSP ISA (CUSTOM-0)**
+### 🫀 Application Focus: Real-Time Heart Monitoring
+To prove the computational efficiency of the architecture, I developed a complete hardware/software system for real-time ECG analysis:
 
-CoreAccel-V extends the base RV32I instruction set using the CUSTOM-0 opcode space (7'b0001011) to expose the MAC unit to software:
+* **Algorithm Implementation**: The firmware implements the **Pan-Tompkins algorithm** for QRS detection. It utilizes **dynamic thresholding** to precisely detect the R-peak and accurately calculates the BPM using the **R-R interval**.
+* **Hardware Acceleration**: The processor utilizes its custom DSP/MAC unit to analyze the ECG waveform and classify abnormalities (e.g., *Tachycardia*, *Bradycardia*, and *Irregular Rhythms*) with extremely low latency.
+* **Accuracy Verified**: The processor's calculated BPM was cross-verified against a commercial pulse oximeter. The results rarely diverged, proving the mathematical and timing accuracy of the custom CPU core.
+* **Host GUI (`gui/`)**: Developed a high-performance Python/PyQt OpenGL GUI that interfaces with the processor via UART to stream and visualize the live ECG waveform and classification status.
 
-| Instruction | funct3 | Operation | Description |
-| :---- | :---- | :---- | :---- |
-| MAC rs1, rs2 | 000 | Acc \+= rs1 × TCM\[rs2\] | Multiplies rs1 by the TCM weight at byte-address rs2 |
-| MAC\_CLEAR | 001 | Acc ← 0, OVF ← 0 | Resets the 64-bit accumulator and overflow flags |
-| MAC\_READ\_LO rd | 011 | rd ← Acc\[31:0\] | Reads the lower 32 bits of the accumulator |
-| MAC\_READ\_HI rd | 100 | rd ← Acc\[63:32\] | Reads the upper 32 bits of the accumulator |
+> 📝 *(Note: The `sim/` folder containing the advanced testbenches is currently being updated with new verification features and will be pushed to the repository soon!)*
 
-*Note: The accumulator utilizes signed saturation to ±2⁶³ to prevent silent wraparound on overflow.*
+---
 
-## **⚙️ Getting Started**
+## 📈 Implementation Metrics (Xilinx Artix-7)
 
-### **Prerequisites**
+The design successfully meets all physical constraints targeting a Xilinx Artix-7 device.
 
-* **Fast Functional Simulation**: Icarus Verilog (iverilog) or Verilator.  
-* **Synthesis & Implementation**: Xilinx Vivado 2020.2 or newer.  
-* **Target Hardware**: Digilent Basys 3 (Artix-7 xc7a35t).
+| Metric | Value | Detail |
+| :--- | :--- | :--- |
+| **Maximum Frequency ($F_{max}$)** | **100.75 MHz** | Targeted 100 MHz clock with a WNS of +0.075 ns. |
+| **LUTs** | **2,449** | Highly optimized logic footprint. |
+| **Flip-Flops** | **1,595** | Efficient register utilization. |
+| **BRAMs** | **1** | Maps exactly to one RAMB36E1 tile. |
+| **DSPs** | **4** | Mapped cleanly to four DSP48E1 slices. |
+| **Power Consumption** | **0.189 W** | Dynamic: 0.117 W, Static: 0.072 W. |
 
-### **1\. Lightweight Verification (Icarus Verilog)**
+**Raw EDA Reports:**  
+🔗 [Timing](docs/timing_report.txt) | 🔗 [Power](docs/Power_report.txt) | 🔗 [Utilization](docs/utilization_report.txt) | 🔗 [Methodology](docs/methodology_report.txt)
 
-To quickly run the core testbenches and verify hazard logic without spinning up a Vivado project:
+---
 
-cd sim  
-iverilog \-g2012 \-I ../rtl \-o sim\_build/tcm\_test tb\_tcm\_corner\_cases.sv ../rtl/\*.sv  
-vvp sim\_build/tcm\_test
+## 🔮 Future Plans: Path to ASIC
 
-*(View generated waveforms using GTKWave by opening the resulting .vcd file).*
+While the FPGA implementation proves the design works flawlessly in a physical system, the ultimate goal for CoreAccel-V is a tape-out as a **custom ASIC**. 
 
-### **2\. FPGA Synthesis (Vivado)**
+The architecture will be expanded into a complete SoC, featuring advanced memory hierarchies, AXI interconnects, and external memory controllers. For a deep dive into the planned final design, please read the [Target SoC Architecture](docs/TARGET_SOC_ARCHITECTURE.md) document.
 
-The project relies on standard Xilinx Vivado flows for physical mapping:
+* Immediate next steps include finalizing the advanced UVM/layered testbench suite to achieve **100% functional and code coverage**.
+* Refining the RTL to meet strict ASIC design rules.
 
-1. Create a new Vivado project targeting the xc7a35tcpg236-1 device.  
-2. Add all SystemVerilog (.sv) files from the rtl/ directory as design sources.  
-3. Add the physical constraints found in constraints/cpu\_pipeline\_top.xdc.  
-4. Run Synthesis, Implementation, and generate the bitstream to program the Basys 3 board.
+---
 
-*(Note: Vivado xsim can also be used for simulation by importing the sim/ directory as simulation sources).*
+## 📁 Repository Structure
 
-## **📄 Documentation**
-
-For a deep dive into the memory map, hazard handling, pipeline forwarding architecture, and physical inference strategies, please refer to the primary architectural spec:
-
-* [The CoreAccel-V Architecture](docs/The_CoreAccel_V_Architecture.md)  
-* [Engineering Methodology](docs/methodology_report.txt)
-* [Timing Report](docs/timing_report.txt)
-* [Power Report](docs/Power_report.txt)
+```text
+CoreAccel-V/
+├── rtl/           # SystemVerilog source files (CPU pipeline, DSP unit, peripherals)
+├── firmware/      # C/Assembly source code, linker scripts, Makefiles
+├── gui/           # Python host application for visualizing UART telemetry
+├── constraints/   # Physical constraints used for the FPGA implementation
+└── docs/          # Block diagrams, architecture documentation, EDA reports
+```

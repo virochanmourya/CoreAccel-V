@@ -45,15 +45,15 @@ module tcm_ram #(
     // Force BRAM inference — do NOT use distributed LUTRAM
     (* ram_style = "block" *) logic [WIDTH-1:0] mem [0:DEPTH-1];
 
-    // Initialize to zero for simulation
+    // Initialize with C firmware .data section (DSP coefficients)
     initial begin
-        for (int i = 0; i < DEPTH; i++) mem[i] = '0;
+        $readmemh("tcm_test.mem", mem);
     end
 
     // Port A: Write-First mode (Xilinx BRAM WRITE_FIRST template)
     // On write: store data AND return the new value on douta.
     // On read-only: return the stored value.
-    always_ff @(posedge clka) begin
+    always @(posedge clka) begin
         if (wea) begin
             mem[addra] <= dina;
             douta      <= dina;       // Write-First: read returns new data
