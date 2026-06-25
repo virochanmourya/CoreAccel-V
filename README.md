@@ -80,6 +80,48 @@ The architecture will be expanded into a complete SoC, featuring advanced memory
 
 ---
 
+## 🛠️ Prerequisites
+Simulating and synthesizing the project requires:
+* **Hardware Simulation**: Verilator or QuestaSim
+* **Synthesis & Implementation**: Xilinx Vivado (Tested on 2023.2)
+* **Firmware Compilation**: RISC-V GNU Compiler Toolchain (`riscv64-unknown-elf-gcc`)
+* **Host GUI**: Python 3.10+ with `PyQt5` and `pyqtgraph`
+
+---
+
+## 🚀 Quick Start & Simulation
+
+**1. Compile the Firmware**
+```bash
+cd firmware
+make all
+```
+
+**2. Run the RTL Simulation**
+```bash
+cd sim
+make run_pipeline_tb
+```
+
+**3. Launch the ECG Host GUI**
+```bash
+cd gui
+pip install -r requirements.txt
+python ecg_monitor.py --port COM3
+```
+
+---
+
+## 📫 Contact & Author
+
+**Virochan — Undergraduate Engineering Student (Electronics & Communication)**
+
+> 💡 *Currently seeking 6th/7th-semester internship opportunities in RTL Design, ASIC Verification, or Computer Architecture.*
+
+🔗 [LinkedIn](#) | 📧 [Email](#)
+
+---
+
 ## 📁 Repository Structure
 
 ```text
