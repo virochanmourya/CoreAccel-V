@@ -450,25 +450,28 @@ The SoC implements a **full MESI snoopy bus protocol** ensuring cache coherence 
 ```mermaid
 stateDiagram-v2
     I --> E : 1. PrRd miss, no sharer
-    I --> S : 2. PrRd miss, other has E/S
-    I --> S : 3. PrRd miss, other has M — intervention
+    I --> S : 2. PrRd miss, other has E or S
+    I --> S : 3. PrRd miss, other has M
     I --> M : 4. PrWr miss, write-allocate
 
-    E --> E : 5. PrRd hit — silent
-    E --> M : 6. PrWr hit — SILENT UPGRADE
+    E --> E : 5. PrRd hit, silent
+    E --> M : 6. PrWr hit, silent upgrade
 
-    S --> S : 7. PrRd hit — silent
-    S --> M : 8. PrWr hit — BusUpgr
+    S --> S : 7. PrRd hit, silent
+    S --> M : 8. PrWr hit, BusUpgr
 
-    M --> M : 9. PrRd/PrWr hit — silent
-    M --> S : 10. Snooped BusRd — supply + writeback
-    M --> I : 11. Snooped BusRdX — supply + invalidate
+    M --> M : 9. PrRd or PrWr hit, silent
+    M --> S : 10. Snooped BusRd, supply and writeback
+    M --> I : 11. Snooped BusRdX, supply and invalidate
 
-    S --> I : 12. Snooped BusUpgr/BusRdX — invalidate
-
-    note right of E : Transition 6 is the key MESI\noptimization: E→M requires\nNO bus traffic
-    note left of M : Dirty intervention:\nM-cache supplies data\ndirectly to requestor
+    S --> I : 12. Snooped BusUpgr or BusRdX, invalidate
 ```
+
+> [!NOTE]
+> **Transition 6 (E→M) is MESI's key optimization:** A line in Exclusive state can be silently upgraded to Modified on a write hit — zero bus traffic required. This does not exist in MSI.
+>
+> **Transition 3 (Dirty Intervention):** When core 0 reads a line that core 1 has in Modified state, core 1 supplies dirty data directly (not from memory) and transitions M→S simultaneously.
+
 
 ### Bus Transaction Types
 
@@ -1310,13 +1313,10 @@ The Tightly-Coupled Memory provides **simultaneous access** from two independent
 | **Port A** | CPU cores + DMA (via AXI bus fabric) | Bus arbiter (round-robin) | Equal |
 | **Port B** | Active core MAC + FFT engine | `tcm_port_b_arbiter` | MAC > FFT |
 
-> [!TIP]
+> [!Important]
 > The dual-port architecture allows the MAC unit to stream TCM data for multiply-accumulate operations **simultaneously** with CPU or DMA access on Port A — zero contention for the most common DSP pattern.
 
----
 
-> [!IMPORTANT]
-> **Document Status:** This specification describes the complete target architecture. Implementation is tracked in [ROADMAP.md](file:///home/virochan/verilog/CoreAccel_V/ROADMAP.md). Known architectural issues are logged in [architecture_flaw_ledger.md](file:///home/virochan/verilog/CoreAccel_V/architecture_flaw_ledger.md).
 
 ---
 
