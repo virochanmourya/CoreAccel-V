@@ -18,7 +18,7 @@
 ## 📊 Architecture Block Diagram
 
 <p align="center">
-  <a href="docs/architecture_block_diagram.pdf">
+  <a href="docs/architecture_block_diagram.png">
     <img src="docs/architecture_block_diagram.png" alt="CoreAccel-V Architecture" width="85%"/>
   </a>
 </p>
