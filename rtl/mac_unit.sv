@@ -1,11 +1,11 @@
 // ============================================================================
-// Module: mac_unit (TCM-Fed DSP MAC with 64-Bit Signed Saturation)
-// File:   mac_unit.sv
-//
-// CHANGE: operand_b replaced by tcm_data. The MAC now reads its second
-//         operand from the TCM Port B output (1-cycle BRAM latency).
-//         The S_INPUT state absorbs this latency: address is presented
-//         in IDLE, data arrives during S_INPUT, product computed at exit.
+// Module      : mac_unit
+// File        : mac_unit.sv
+// Description : TCM-Fed DSP MAC with 64-Bit Signed Saturation
+//               Reads operand_a directly and operand_b from the TCM Port B output, which
+//               incurs a 1-cycle BRAM latency. The S_INPUT state absorbs this latency:
+//               the address is presented in IDLE, data arrives during S_INPUT, and the
+//               product is computed at exit.
 // ============================================================================
 
 module mac_unit (
@@ -30,7 +30,7 @@ module mac_unit (
 
   state_t state, next_state;
 
-  // 72-bit signed accumulator saturation limits (parameterized, not magic)
+  // 72-bit signed accumulator saturation limits
   localparam logic signed [71:0] SAT_MAX = {1'b0, {71{1'b1}}};
   localparam logic signed [71:0] SAT_MIN = {1'b1, {71{1'b0}}};
 
@@ -85,7 +85,7 @@ module mac_unit (
   always_ff @(posedge clk)
   begin
     if (reset || mac_abort)
-      state <= IDLE;          // Abort: kill FSM mid-flight → IDLE
+      state <= IDLE;
     else
       state <= next_state;
   end
@@ -101,13 +101,9 @@ module mac_unit (
     end
     else if (!mac_abort)
     begin
-      // Normal datapath operation (gated by !mac_abort so that an
-      // abort holds ALL registers at their last committed values).
+      // Gated by !mac_abort to hold registers at last committed values on abort
       case (state)
-        // IDLE: Latch operand_a. TCM address (forwarded_b) is
-        // presented to Port B combinationally in this cycle.
-        // BRAM will register it at this posedge and output data
-        // 1 cycle later (during S_INPUT).
+        // TCM address presented to Port B; BRAM outputs data in S_INPUT
         IDLE:
         begin
           if (mac_start)
@@ -116,14 +112,13 @@ module mac_unit (
           end
         end
 
-        // S_INPUT: TCM data has arrived (1-cycle BRAM latency).
-        // Compute full 64-bit signed product.
+        // TCM data arrived; compute 64-bit signed product
         S_INPUT:
         begin
           product_reg <= a_reg * tcm_data;
         end
 
-        // S_MULTIPLY: Saturating accumulate.
+        // Saturating accumulate
         S_MULTIPLY:
         begin
           accumulator <= next_accum_comb;
@@ -142,9 +137,6 @@ module mac_unit (
         overflow_flag <= 0;
       end
     end
-    // else: mac_abort asserted — all datapath registers HOLD.
-    //       Accumulator retains its last committed value.
-    //       In-flight a_reg/product_reg are abandoned (don't-care).
   end
 
 endmodule

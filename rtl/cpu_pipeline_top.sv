@@ -1,34 +1,28 @@
 // ============================================================================
-// Module: cpu_pipeline_top (5-Stage Pipelined RV32I + DSP - Full ISA)
-// File:   cpu_pipeline_top.sv
+// Module      : cpu_pipeline_top
+// File        : cpu_pipeline_top.sv
+// Description : 5-Stage Pipelined RV32I + DSP - Full ISA
 // ============================================================================
 
-module cpu_pipeline_top
- (
+module cpu_pipeline_top (
     input  logic       clk,
     input  logic       reset,
-    // Debug outputs - prevent Vivado from optimizing the design away.
-    // Without at least one output, the entire netlist is removed during
-    // opt_design, causing [Place 30-494] "The design is empty".
-    output logic [7:0] debug_pc, // Lower 8 bits of PC (→ LEDs 0-7)
-    output logic [7:0] debug_wb, // Lower 8 bits of WB data (→ LEDs 8-15)
+    
+    // Debug outputs
+    output logic [7:0] debug_pc,
+    output logic [7:0] debug_wb,
 
-    // ---- I2C GPIO (Open-Drain, Active-Low Drive) ----
-    // Bidirectional pins for I2C bus. Uses IOBUF wrapper for reliable read-back.
-    inout  wire        i2c_scl, // Pmod JA Pin 4 (bidirectional)
-    inout  wire        i2c_sda, // Pmod JA Pin 3 (bidirectional)
+    // I2C GPIO (Open-Drain, Active-Low Drive)
+    inout  wire        i2c_scl,
+    inout  wire        i2c_sda,
 
-    // ---- UART Telemetry Output (One-Way TX) ----
-    // Basys 3 onboard USB-UART bridge (FTDI FT2232HQ), TX-only at 115200 baud.
-    // MMIO at 0xC000_0004: write byte to transmit, read busy flag.
-    output logic        uart_tx_out, // USB-UART TX pin (active-high idle)
+    // UART Telemetry Output (One-Way TX)
+    output logic       uart_tx_out,
 
-    // ---- 7-Segment Display (Hardware Multiplexed) ----
-    // Basys 3 onboard 4-digit common-anode display. All active-low.
-    // MMIO at 0xC000_0008: write 16-bit BCD value, hardware refreshes at 1 kHz.
-    output logic [6:0]  seg, // Cathode segments a-g (active-low)
-    output logic        dp, // Decimal point (active-low, tied OFF)
-    output logic [3:0]  an // Anode enables (active-low)
+    // 7-Segment Display (Hardware Multiplexed)
+    output logic [6:0] seg,
+    output logic       dp,
+    output logic [3:0] an
 );
 
     // ========================================================================
@@ -362,14 +356,10 @@ module cpu_pipeline_top
     assign mac_stall_request = is_mac_ex & ~(mac_started_reg & ~mac_busy_ex);
 
     // ---- TCM Port B: MAC Weight Stream (EX stage) ----
-    // forwarded_b (rs2) contains the TCM byte address.
-    // Port B extracts word index [11:2] for the 1024-word array.
-    // BRAM output arrives 1 cycle later, during MAC's S_INPUT state.
     assign tcm_addrb = forwarded_b[11:2];
 
     // ---- MAC Unit (TCM-fed) ----
-    // mac_abort is wired to pc_redirect (branch taken | jump), NOT id_ex_flush.
-    // id_ex_flush includes load-use stalls which must NOT kill the MAC.
+    // mac_abort is wired to pc_redirect (branch taken | jump) to avoid aborting on load-use stalls.
     mac_unit dsp_core (
         .clk             (clk),
         .reset           (reset),
@@ -384,25 +374,20 @@ module cpu_pipeline_top
     );
 
     // ---- MAC 64-bit Slicer ----
-    // AUDIT(A-5): Bit-selects [63:32] and [31:0] are always unsigned per
-    // SV LRM §11.5.1. Width is 32→32 — no zero-extension occurs. The raw
-    // bit pattern is preserved exactly into the unsigned writeback path.
-    // Signed interpretation is a software/firmware concern beyond this point.
     assign sliced_mac_result = is_mac_read_hi_ex
     ? mac_result_full_ex[63:32]
     : mac_result_full_ex[31:0];
 
     // ---- EX Stage Result Mux ----
-    // Priority: pc_to_reg (JAL/JALR) > mac_to_reg (DSP) > alu_result
     assign pc_plus4_ex = id_ex_pc + 32'd4;
 
     always_comb begin
         if (id_ex_pc_to_reg)
-            ex_stage_result = pc_plus4_ex; // JAL/JALR: write PC+4
+            ex_stage_result = pc_plus4_ex;
         else if (mac_to_reg_ex)
-            ex_stage_result = sliced_mac_result; // MAC_READ_LO/HI
+            ex_stage_result = sliced_mac_result;
         else
-            ex_stage_result = alu_result; // Normal ALU
+            ex_stage_result = alu_result;
     end
 
     // ---- Branch Comparator (EX stage, full RV32I) ----
@@ -412,27 +397,25 @@ module cpu_pipeline_top
         branch_taken = 1'b0;
         if (id_ex_branch) begin
             case (id_ex_funct3)
-                3'b000:  branch_taken = (forwarded_a == forwarded_b); // BEQ
-                3'b001:  branch_taken = (forwarded_a != forwarded_b); // BNE
-                3'b100:  branch_taken = ($signed(forwarded_a) < $signed(forwarded_b)); // BLT
-                3'b101:  branch_taken = ($signed(forwarded_a) >= $signed(forwarded_b)); // BGE
-                3'b110:  branch_taken = (forwarded_a < forwarded_b); // BLTU
-                3'b111:  branch_taken = (forwarded_a >= forwarded_b); // BGEU
+                3'b000:  branch_taken = (forwarded_a == forwarded_b);
+                3'b001:  branch_taken = (forwarded_a != forwarded_b);
+                3'b100:  branch_taken = ($signed(forwarded_a) < $signed(forwarded_b));
+                3'b101:  branch_taken = ($signed(forwarded_a) >= $signed(forwarded_b));
+                3'b110:  branch_taken = (forwarded_a < forwarded_b);
+                3'b111:  branch_taken = (forwarded_a >= forwarded_b);
                 default: branch_taken = 1'b0;
             endcase
         end
     end
 
     // ---- Jump Target ----
-    // JAL:  target = pc_branch (id_ex_pc + id_ex_imm)
-    // JALR: target = (rs1 + imm) & ~1 = alu_result & ~1
     assign jalr_target = alu_result & 32'hFFFFFFFE;
 
     always_comb begin
         if (id_ex_jump && id_ex_alu_src)
-            redirect_target = jalr_target; // JALR
+            redirect_target = jalr_target;
         else
-            redirect_target = pc_branch; // JAL / Branch
+            redirect_target = pc_branch;
     end
 
     // ========================================================================
@@ -453,15 +436,8 @@ module cpu_pipeline_top
     );
 
     // ========================================================================
-    //  MEM STAGE — 3-Way Address Decoder + Memory Subsystems
+    //  MEM STAGE — Address Decoder & Memory Subsystems
     // ========================================================================
-    //
-    //  Address Map (decoded from ex_mem_alu_result[31:30]):
-    //    2'b00 → DMEM   (0x0000_0000 – 0x3FFF_FFFF)  Distributed LUTRAM
-    //    2'b10 → TCM    (0x8000_0000 – 0xBFFF_FFFF)  BRAM36E1
-    //    2'b11 → GPIO   (0xC000_0000 – 0xFFFF_FFFF)  I2C MMIO Register
-    //    2'b01 →        (0x4000_0000 – 0x7FFF_FFFF)  Reserved / unmapped
-    //
     assign is_tcm_access  = (ex_mem_alu_result[31:30] == 2'b10);
     assign is_gpio_access = (ex_mem_alu_result[31:30] == 2'b11);
 
@@ -471,9 +447,6 @@ module cpu_pipeline_top
     assign tcm_wea        = ex_mem_mem_write &  is_tcm_access;
 
     // ---- Peripheral Sub-Decode (0xC000_xxxx region) ----
-    //   addr[3:2] = 2'b00 → I2C GPIO  (0xC000_0000)
-    //   addr[3:2] = 2'b01 → UART TX   (0xC000_0004)
-    //   addr[3:2] = 2'b10 → 7-Segment  (0xC000_0008)
     assign is_i2c_access  = is_gpio_access & (ex_mem_alu_result[3:2] == 2'b00);
     assign is_uart_access = is_gpio_access & (ex_mem_alu_result[3:2] == 2'b01);
     assign is_seg_access  = is_gpio_access & (ex_mem_alu_result[3:2] == 2'b10);
@@ -482,17 +455,6 @@ module cpu_pipeline_top
     assign seg_we         = ex_mem_mem_write &  is_seg_access;
 
     // TCM Port A Address MUX — BRAM Latency Compensation
-    //
-    // BRAM has 1-cycle read latency (registered output). For reads, we
-    // present the address from the EX stage (alu_result) — one cycle
-    // BEFORE MEM/WB samples douta. For writes, we use the MEM stage
-    // address (ex_mem_alu_result) which is already registered.
-    //
-    // Timeline for LW from TCM:
-    //   EX stage: alu_result has TCM address → presented to addra
-    //   Posedge:  BRAM registers address, douta <= mem[addr]
-    //   MEM stage: tcm_douta is valid (correct data for EX address)
-    //   Posedge:  MEM/WB latches tcm_douta → CORRECT
     assign tcm_addra = tcm_wea ? ex_mem_alu_result[11:2] : alu_result[11:2];
 
     // Standard data memory (non-TCM region)
@@ -520,64 +482,26 @@ module cpu_pipeline_top
     // ========================================================================
     //  I2C GPIO MMIO Register (0xC000_0000)
     // ========================================================================
-    //
-    //  WRITE (sw to 0xC000_0000):
-    //    Bit 0: SCL — write 0 = drive LOW, write 1 = HIGH-Z (open-drain)
-    //    Bit 1: SDA — write 0 = drive LOW, write 1 = HIGH-Z (open-drain)
-    //
-    //  READ (lw from 0xC000_0000):
-    //    Bit 0: Actual SCL pin state (sampled from physical pad)
-    //    Bit 1: Actual SDA pin state (sampled from physical pad)
-    //    Bits 31:2: Read as 0
-    //
 
     // ========================================================================
     //  I2C Bidirectional I/O — Isolated IOBUF Wrapper
     // ========================================================================
-    //
-    // Uses a separate DONT_TOUCH module (i2c_iobuf.sv) to prevent Vivado
-    // from optimizing away the IOBUF .O read-back path. The wrapper is
-    // synthesis-opaque: Vivado cannot inline or optimize its contents.
-    //
-    // gpio_out_reg[x] = 0 → drive_low=0 → pin released (high-Z, pull-up)
-    // gpio_out_reg[x] = 1 → drive_low=1 → pin driven LOW
-    //
-    // INVERTED: gpio_out_reg uses I2C convention (1=release, 0=drive).
-    //           i2c_iobuf uses drive_low convention (1=drive, 0=release).
-
-
 
     // ---- GPIO Output Register (Write Path) ----
-    // Latches CPU write data on a store to the GPIO address region.
-    // Resets to 2'b11 (both lines idle HIGH-Z = I2C bus idle).
     always_ff @(posedge clk) begin
         if (reset)
-            gpio_out_reg <= 2'b11; // I2C idle: both lines released
+            gpio_out_reg <= 2'b11;
         else if (gpio_we)
             gpio_out_reg <= ex_mem_rs2_data[1:0];
     end
 
     // ---- GPIO Read-Back (Read Path) ----
-    // Returns the actual physical pin state, not the output register shadow.
-    // This is critical for I2C: the master must read SDA to detect ACK/NACK
-    // from the slave, and for clock stretching detection on SCL.
 
     // ========================================================================
     //  UART TX Peripheral (0xC000_0004)
     // ========================================================================
-    //
-    //  WRITE (sw to 0xC000_0004):
-    //    Bits 7:0 = byte to transmit. Write triggers a 1-cycle tx_valid pulse.
-    //    Upper bits ignored.
-    //
-    //  READ (lw from 0xC000_0004):
-    //    Bit 0 = tx_busy flag. Firmware must poll until 0 before writing.
-    //    Bits 31:1 = 0.
-    //
 
     // Generate a single-cycle valid pulse on the write edge.
-    // uart_we is only HIGH for 1 cycle (MEM stage combinational decode),
-    // so it naturally acts as a pulse.
     assign uart_tx_valid = uart_we;
 
     uart_tx #(
@@ -595,15 +519,6 @@ module cpu_pipeline_top
     // ========================================================================
     //  7-Segment Display Peripheral (0xC000_0008)
     // ========================================================================
-    //
-    //  WRITE (sw to 0xC000_0008):
-    //    Bits 15:0 = 4 BCD/hex digits {d3, d2, d1, d0}. Hardware latches
-    //    the value and continuously refreshes the physical display at 1 kHz.
-    //    Upper 16 bits ignored.
-    //
-    //  READ (lw from 0xC000_0008):
-    //    Returns the currently latched display value in bits 15:0.
-    //
 
     // ---- Display Data Register ----
     always_ff @(posedge clk) begin
@@ -626,10 +541,6 @@ module cpu_pipeline_top
     // ========================================================================
     //  Peripheral Read-Back Mux (I2C / UART / 7-Seg / GPIO Debug)
     // ========================================================================
-    //  0xC000_0000 (addr[3:2]=00) → {30'b0, sda_pin_in, scl_pin_in}  (physical)
-    //  0xC000_0004 (addr[3:2]=01) → {31'b0, uart_tx_busy}
-    //  0xC000_0008 (addr[3:2]=10) → {16'b0, seg_display_data}
-    //  0xC000_000C (addr[3:2]=11) → {30'b0, gpio_out_reg}            (debug)
     always_comb begin
         case (ex_mem_alu_result[3:2])
             2'b00:   gpio_rdata = {30'b0, sda_pin_in, scl_pin_in};
@@ -673,7 +584,7 @@ module cpu_pipeline_top
     assign wb_data = mem_wb_mem_to_reg ? mem_wb_mem_data : mem_wb_alu_result;
 
     // ========================================================================
-    //  DEBUG OUTPUTS - Prevent Vivado from removing the design
+    //  DEBUG OUTPUTS
     // ========================================================================
 
     assign debug_pc = pc_current[7:0];

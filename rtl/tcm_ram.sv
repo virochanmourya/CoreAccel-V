@@ -1,27 +1,12 @@
 // ============================================================================
-// Module: tcm_ram (4KB True Dual-Port Tightly Coupled Memory)
-// File:   tcm_ram.sv
-//
-// PURPOSE:
-//   4KB (1024 x 32-bit) True Dual-Port RAM for DSP weight storage.
-//   Infers Xilinx Block RAM (BRAM) via (* ram_style = "block" *).
-//
-//   Port A: Synchronous Read/Write — CPU bus (MEM stage).
-//           Write-First mode: on simultaneous read+write to same address,
-//           the NEW data is returned on douta (standard BRAM WRITE_FIRST).
-//
-//   Port B: Synchronous Read-Only — MAC unit (EX stage).
-//           Streams weights directly to the multiplier.
-//           1-cycle read latency (registered output, standard BRAM).
-//
-//   Cross-port behavior: If Port A writes and Port B reads the SAME
-//   address in the SAME cycle, Xilinx 7-series TDP BRAM returns the
-//   OLD value on Port B (NO_CHANGE / READ_FIRST mode). No metastability,
-//   no data corruption in the array. This is a software data race —
-//   the programmer must insert a NOP/fence between a TCM store and a
-//   MAC read to the same address. No hardware interlock is needed.
-//
-// TARGET: Xilinx Artix-7 — maps to one BRAM36E1 (36Kb) tile
+// Module      : tcm_ram
+// File        : tcm_ram.sv
+// Description : 4KB True Dual-Port Tightly Coupled Memory for DSP weights.
+//               Infers Xilinx Block RAM (BRAM).
+//               - Port A: Sync Read/Write (CPU MEM stage), Write-First mode.
+//               - Port B: Sync Read-Only (MAC EX stage), 1-cycle latency.
+//               - Cross-port collisions handled by software logic (NOP/fence).
+//               Xilinx Artix-7 (1x BRAM36E1)
 // ============================================================================
 
 module tcm_ram #(
@@ -51,14 +36,12 @@ module tcm_ram #(
     end
 
     // Port A: Write-First mode (Xilinx BRAM WRITE_FIRST template)
-    // On write: store data AND return the new value on douta.
-    // On read-only: return the stored value.
     always @(posedge clka) begin
         if (wea) begin
             mem[addra] <= dina;
-            douta      <= dina;       // Write-First: read returns new data
+            douta      <= dina;
         end else begin
-            douta      <= mem[addra]; // Normal synchronous read
+            douta      <= mem[addra];
         end
     end
 

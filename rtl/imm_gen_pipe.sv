@@ -1,6 +1,7 @@
 // ============================================================================
-// Module: imm_gen_pipe (Full RV32I Immediate Generator)
-// File:   imm_gen_pipe.sv
+// Module      : imm_gen_pipe
+// File        : imm_gen_pipe.sv
+// Description : Full RV32I Immediate Generator
 // ============================================================================
 
 module imm_gen_pipe (

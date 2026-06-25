@@ -1,27 +1,11 @@
 // ============================================================================
-// Module: register_file
-// File:   register_file.v
-//
-// PURPOSE:
-//   The register file holds 32 general-purpose registers, each 32 bits wide.
-//   - Two registers can be READ at the same time (combinational, no clock)
-//   - One register can be WRITTEN on the rising clock edge
-//   - Register x0 is ALWAYS zero (hardwired by RISC-V spec)
-//
-// INPUTS:
-//   clk       - Clock signal
-//   reg_write - Write enable (1 = write to rd)
-//   rs1       [4:0]  - Address of first source register
-//   rs2       [4:0]  - Address of second source register
-//   rd        [4:0]  - Address of destination register
-//   write_data[31:0] - Data to write into rd
-//
-// OUTPUTS:
-//   read_data1 [31:0] - Value of register rs1
-//   read_data2 [31:0] - Value of register rs2
+// Module      : register_file
+// File        : register_file.sv
+// Description : 32x32-bit general-purpose register file.
+//               Features two combinational read ports and one synchronous write
+//               port. Register x0 is hardwired to zero.
 // ============================================================================
 
-// register_file.sv
 module register_file (
     input  logic clk,
     input  logic reset,
@@ -30,14 +14,12 @@ module register_file (
     input  logic [31:0] write_data,
     output logic [31:0] read_data1, read_data2
 );
-    // Explicit logic array instead of reg
     logic [31:0] registers [0:31];
 
     // Combinational reads
     assign read_data1 = (rs1 == 5'b0) ? 32'b0 : registers[rs1];
     assign read_data2 = (rs2 == 5'b0) ? 32'b0 : registers[rs2];
 
-    // Explicit sequential intent
     always_ff @(posedge clk) begin
         if (reset) begin
             integer i;

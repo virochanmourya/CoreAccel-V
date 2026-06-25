@@ -1,13 +1,11 @@
 // ============================================================================
-// Module: hazard_detection_unit
-// File:   hazard_detection_unit.sv
-//
-// PURPOSE:
-//   Detects Load-Use hazards. If an instruction in the EX stage is a Load (LW),
-//   and the instruction in the ID stage needs its destination register,
-//   it asserts a 'stall' signal.
-//
-//   Note: Multi-cycle DSP stalls are handled explicitly in cpu_pipeline_top.sv
+// Module      : hazard_detection_unit
+// File        : hazard_detection_unit.sv
+// Description : Detects Load-Use hazards. Asserts stall if an instruction in
+//               the EX stage is a Load (LW) and the ID stage needs its
+//               destination register.
+//               Note: Multi-cycle DSP stalls are handled explicitly in
+//               cpu_pipeline_top.sv
 // ============================================================================
 
 module hazard_detection_unit (

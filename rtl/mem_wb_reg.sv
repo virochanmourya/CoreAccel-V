@@ -1,37 +1,27 @@
 // ============================================================================
-// Module: mem_wb_reg (MEM/WB Pipeline Register)
-// File:   mem_wb_reg.sv
-//
-// PURPOSE:
-//   Latches data between the Memory (MEM) and Write Back (WB) pipeline stages
-//   on each rising clock edge.
-//
-//   Carries forward:
-//     - WB control: reg_write, mem_to_reg
-//     - Data:       mem_data (from data memory read), alu_result (passthrough)
-//     - Address:    rd_addr (destination register)
-//
-// INPUTS/OUTPUTS:
-//   All signals have _in (input) and _out (output) pairs.
+// Module      : mem_wb_reg
+// File        : mem_wb_reg.sv
+// Description : MEM/WB pipeline register. Latches data and control signals
+//               between the Memory (MEM) and Write Back (WB) stages.
 // ============================================================================
 
 module mem_wb_reg (
     input  logic        clk,
     input  logic        reset,
 
-    // ---- WB control signals ----
+    // WB control signals
     input  logic        reg_write_in,
     input  logic        mem_to_reg_in,
     output logic        reg_write_out,
     output logic        mem_to_reg_out,
 
-    // ---- Data ----
+    // Data
     input  logic [31:0] mem_data_in,
     input  logic [31:0] alu_result_in,
     output logic [31:0] mem_data_out,
     output logic [31:0] alu_result_out,
 
-    // ---- Destination register address ----
+    // Destination register address
     input  logic [4:0]  rd_addr_in,
     output logic [4:0]  rd_addr_out
 );

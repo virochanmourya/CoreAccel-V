@@ -1,6 +1,9 @@
 // ============================================================================
-// Module: id_ex_reg (ID/EX Pipeline Register — Full RV32I + DSP)
-// File:   id_ex_reg.sv
+// Module      : id_ex_reg
+// File        : id_ex_reg.sv
+// Description : ID/EX Pipeline Register — Full RV32I + DSP. Latches control
+//               and data signals between the Instruction Decode (ID) and
+//               Execute (EX) pipeline stages.
 // ============================================================================
 
 module id_ex_reg (
@@ -9,25 +12,25 @@ module id_ex_reg (
     input  logic        flush,
     input  logic        stall,
 
-    // ---- WB control ----
+    // WB control
     input  logic        reg_write_in,
     input  logic        mem_to_reg_in,
     output logic        reg_write_out,
     output logic        mem_to_reg_out,
 
-    // ---- MEM control ----
+    // MEM control
     input  logic        mem_read_in,
     input  logic        mem_write_in,
     output logic        mem_read_out,
     output logic        mem_write_out,
 
-    // ---- EX control ----
+    // EX control
     input  logic        alu_src_in,
     input  logic [3:0]  alu_control_in,
     output logic        alu_src_out,
     output logic [3:0]  alu_control_out,
 
-    // ---- New RV32I control ----
+    // RV32I control
     input  logic        alu_src_a_in,
     input  logic        pc_to_reg_in,
     input  logic        jump_in,
@@ -35,11 +38,11 @@ module id_ex_reg (
     output logic        pc_to_reg_out,
     output logic        jump_out,
 
-    // ---- Branch control ----
+    // Branch control
     input  logic        branch_in,
     output logic        branch_out,
 
-    // ---- DSP control ----
+    // DSP control
     input  logic        is_mac_in,
     input  logic        is_mac_clear_in,
     input  logic        mac_to_reg_in,
@@ -49,7 +52,7 @@ module id_ex_reg (
     output logic        mac_to_reg_out,
     output logic        is_mac_read_hi_out,
 
-    // ---- Data ----
+    // Data
     input  logic [31:0] pc_in,
     input  logic [31:0] rs1_data_in,
     input  logic [31:0] rs2_data_in,
@@ -59,7 +62,7 @@ module id_ex_reg (
     output logic [31:0] rs2_data_out,
     output logic [31:0] imm_out,
 
-    // ---- Register addresses ----
+    // Register addresses
     input  logic [4:0]  rs1_addr_in,
     input  logic [4:0]  rs2_addr_in,
     input  logic [4:0]  rd_addr_in,
@@ -67,7 +70,7 @@ module id_ex_reg (
     output logic [4:0]  rs2_addr_out,
     output logic [4:0]  rd_addr_out,
 
-    // ---- Instruction fields ----
+    // Instruction fields
     input  logic [2:0]  funct3_in,
     output logic [2:0]  funct3_out
 );
@@ -121,7 +124,6 @@ module id_ex_reg (
             rd_addr_out        <= rd_addr_in;
             funct3_out         <= funct3_in;
         end
-        // else: stall — hold all values
     end
 
 endmodule

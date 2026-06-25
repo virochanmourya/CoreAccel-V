@@ -1,10 +1,12 @@
 // ============================================================================
-// File:   include.sv (RTL Design)
-// Purpose: Consolidates all RTL files for easy compilation in EDA Playground.
-//          Simply `include this file in the 'design.sv' tab.
+// Module      : include
+// File        : include.sv
+// Description : include.sv (RTL Design)
+//               Consolidates all RTL files for easy compilation in EDA Playground.
+//               Simply `include this file in the 'design.sv' tab.
+//               --- Core Logic & Execution Units ---
 // ============================================================================
 
-// --- Core Logic & Execution Units ---
 `include "alu.sv"
 `include "mac_unit.sv"
 `include "imm_gen_pipe.sv"

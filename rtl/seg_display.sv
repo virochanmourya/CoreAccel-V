@@ -1,22 +1,9 @@
 // ============================================================================
-// Module: seg_display (4-Digit 7-Segment Hardware Multiplexer)
-// File:   seg_display.sv
-//
-// PURPOSE:
-//   Drives the Basys 3's 4-digit 7-segment display entirely in hardware.
-//   Firmware writes a 16-bit value (4 hex/BCD digits) to an MMIO register;
-//   this module handles the ~1 kHz anode multiplexing and cathode decoding.
-//
-//   The display refreshes at ~1 kHz (100 MHz / 100,000 = 1 kHz), cycling
-//   through each of the 4 digits at ~250 Hz per digit — well above the
-//   human flicker perception threshold (~60 Hz).
-//
-// ACTIVE-LOW OUTPUTS:
-//   an[3:0]  — Anode enables (0 = digit ON, active-low)
-//   seg[6:0] — Cathode segments (0 = segment ON, active-low)
-//   dp       — Decimal point (tied HIGH = OFF)
-//
-// TARGET: Xilinx Artix-7 — Basys 3 common-anode 7-segment display
+// Module      : seg_display
+// File        : seg_display.sv
+// Description : 4-Digit 7-Segment Hardware Multiplexer.
+//               Drives a common-anode 4-digit 7-segment display with ~1 kHz
+//               multiplexing and hex/BCD decoding.
 // ============================================================================
 
 module seg_display #(
@@ -33,7 +20,7 @@ module seg_display #(
     output logic        dp             // Decimal point (active-low, tied OFF)
 );
 
-    // ---- Refresh Counter ----
+    // Refresh Counter
     logic [16:0] refresh_cnt;          // Counts to CLKS_PER_MUX (100,000)
     logic [1:0]  digit_sel;            // Active digit selector (0-3)
 
@@ -43,13 +30,13 @@ module seg_display #(
             digit_sel   <= '0;
         end else if (refresh_cnt == CLKS_PER_MUX[16:0] - 1) begin
             refresh_cnt <= '0;
-            digit_sel   <= digit_sel + 1;  // Wraps 3 → 0 automatically
+            digit_sel   <= digit_sel + 1;
         end else begin
             refresh_cnt <= refresh_cnt + 1;
         end
     end
 
-    // ---- Anode Selector (Active-Low) ----
+    // Anode Selector (Active-Low)
     // Only one digit is ON at a time. The rest are driven HIGH (OFF).
     always_comb begin
         case (digit_sel)
@@ -61,7 +48,7 @@ module seg_display #(
         endcase
     end
 
-    // ---- Digit Data Selector ----
+    // Digit Data Selector
     logic [3:0] current_nibble;
 
     always_comb begin
@@ -74,7 +61,7 @@ module seg_display #(
         endcase
     end
 
-    // ---- 7-Segment Hex Decoder (Active-Low Cathodes) ----
+    // 7-Segment Hex Decoder (Active-Low Cathodes)
     //
     //   Segment layout:     a
     //                       ---
@@ -110,7 +97,7 @@ module seg_display #(
         endcase
     end
 
-    // ---- Decimal Point (OFF) ----
+    // Decimal Point (OFF)
     assign dp = 1'b1;  // Active-low: 1 = OFF
 
 endmodule
