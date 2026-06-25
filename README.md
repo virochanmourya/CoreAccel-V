@@ -97,28 +97,30 @@ cd firmware
 make all
 ```
 
-**2. Run the RTL Simulation**
-```bash
-cd sim
-make run_pipeline_tb
-```
-
-**3. Launch the ECG Host GUI**
+**2. Launch the ECG Host GUI**
 ```bash
 cd gui
 pip install -r requirements.txt
-python ecg_monitor.py --port COM3
+python ecg_monitor.py
 ```
+*(Note: The Python application will automatically detect the active UART COM port connected to the FPGA.)*
 
 ---
 
 ## 📫 Contact & Author
 
-**Virochan — Undergraduate Engineering Student (Electronics & Communication)**
+**Virochan Mourya — Final Year Undergraduate Engineering Student (Electronics & Communication)**
 
-> 💡 *Currently seeking 6th/7th-semester internship opportunities in RTL Design, ASIC Verification, or Computer Architecture.*
+> 💡 *Currently seeking final-year internship / new-grad opportunities in RTL Design, ASIC Verification, or Computer Architecture.*
 
-🔗 [LinkedIn](#) | 📧 [Email](#)
+<p>
+  <a href="https://www.linkedin.com/in/virochanmourya/">
+    <img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"/>
+  </a>
+  <a href="mailto:virochanmourya@gmail.com">
+    <img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Email"/>
+  </a>
+</p>
 
 ---
 
