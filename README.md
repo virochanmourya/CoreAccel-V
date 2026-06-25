@@ -113,14 +113,8 @@ python ecg_monitor.py
 
 > 💡 *Currently seeking final-year internship / new-grad opportunities in RTL Design, ASIC Verification, or Computer Architecture.*
 
-<p>
-  <a href="https://www.linkedin.com/in/virochanmourya/">
-    <img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"/>
-  </a>
-  <a href="mailto:virochanmourya@gmail.com">
-    <img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Email"/>
-  </a>
-</p>
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/virochanmourya/)
+[![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:virochanmourya@gmail.com)
 
 ---
 
