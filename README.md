@@ -23,7 +23,7 @@
   </a>
 </p>
 
-> 🔍 *For a high-resolution version, please see the <u>[Architecture PDF](docs/architecture_block_diagram.pdf)</u>.*
+> 🔍 *For a high-resolution version, please see the [<u>Architecture PDF</u>](docs/architecture_block_diagram.pdf).*
 
 ---
 
@@ -37,7 +37,7 @@
 
 ## 🌟 Current Milestone: FPGA ECG Monitoring System
 
-CoreAccel-V has been successfully implemented and validated on physical FPGA hardware. For a detailed breakdown of the exact hardware structures running on the FPGA right now, see the <u>[Current Architecture Report](docs/current_architecture.md)</u>.
+CoreAccel-V has been successfully implemented and validated on physical FPGA hardware. For a detailed breakdown of the exact hardware structures running on the FPGA right now, see the [<u>Current Architecture Report</u>](docs/current_architecture.md).
 
 ### 🫀 Application Focus: Real-Time Heart Monitoring
 To prove the computational efficiency of the architecture, I developed a complete hardware/software system for real-time ECG analysis:
@@ -65,7 +65,7 @@ The design successfully meets all physical constraints targeting a Xilinx Artix-
 | **Power Consumption** | **0.189 W** | Dynamic: 0.117 W, Static: 0.072 W. |
 
 **Raw EDA Reports:**  
-🔗 <u>[Timing](docs/timing_report.txt)</u> | 🔗 <u>[Power](docs/power_report.txt)</u> | 🔗 <u>[Utilization](docs/utilization_report.txt)</u> | 🔗 <u>[Methodology](docs/methodology_report.txt)</u>
+🔗 [<u>Timing</u>](docs/timing_report.txt) | 🔗 [<u>Power</u>](docs/power_report.txt) | 🔗 [<u>Utilization</u>](docs/utilization_report.txt) | 🔗 [<u>Methodology</u>](docs/methodology_report.txt)
 
 ---
 
@@ -73,7 +73,7 @@ The design successfully meets all physical constraints targeting a Xilinx Artix-
 
 While the FPGA implementation proves the design works flawlessly in a physical system, the ultimate goal for CoreAccel-V is a tape-out as a **custom ASIC**. 
 
-The architecture will be expanded into a complete SoC, featuring advanced memory hierarchies, AXI interconnects, and external memory controllers. For a deep dive into the planned final design, please read the <u>[Target SoC Architecture](docs/target_soc_architecture.md)</u> document.
+The architecture will be expanded into a complete SoC, featuring advanced memory hierarchies, AXI interconnects, and external memory controllers. For a deep dive into the planned final design, please read the [<u>Target SoC Architecture</u>](docs/target_soc_architecture.md) document.
 
 * 🛠️ **Verification**: Finalize the advanced UVM/layered testbench suite to achieve **100% functional and code coverage**.
 * 📏 **RTL Refinement**: Refine the RTL to meet strict ASIC design rules.
