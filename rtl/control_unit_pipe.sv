@@ -1,12 +1,13 @@
 // ============================================================================
 // Module      : control_unit_pipe
 // File        : control_unit_pipe.sv
-// Description : RV32I (no Zicsr/traps yet) + CUSTOM-0 DSP Control Unit.
+// Description : RV32IM (no Zicsr/traps yet) + CUSTOM-0 DSP Control Unit.
 //               Any encoding the core does not implement is flagged `illegal`
 //               and decodes as a bubble: all control outputs are 0, so it has
 //               no architectural effect. FENCE (funct3 000) is a legal NOP.
 //               Illegal: unknown opcodes (incl. 0x00000000 and compressed),
-//               SYSTEM (ECALL/EBREAK/CSR*), M-extension and other bad funct7,
+//               SYSTEM (ECALL/EBREAK/CSR*), OP/OP-IMM funct7 values other than
+//               0000000, 0100000 (SUB/SRA/SRAI) and 0000001 (M extension, OP only),
 //               reserved load/store/branch/JALR/MISC-MEM funct3, and
 //               CUSTOM-0 funct3 010/111 or funct7 != 0.
 // ============================================================================
@@ -33,6 +34,8 @@ module control_unit_pipe (
     output logic       mac_to_reg,
     output logic [1:0] mac_rd_op,      // MAC read: 00 LO, 01 HI, 10 SHIFT, 11 STATUS
     output logic       is_mac_rdshift, // READ_SHIFT (multi-cycle, uses the MAC FSM)
+    // M extension: MUL/MULH/MULHSU/MULHU/DIV/DIVU/REM/REMU (op = funct3)
+    output logic       is_muldiv,
     output logic       rs1_valid,
     output logic       rs2_valid,
     // Unsupported / reserved encoding (becomes the illegal-instruction trap cause)
@@ -42,8 +45,9 @@ module control_unit_pipe (
     // ---- Illegal / unsupported encoding decode ----
     always_comb begin
         case (opcode)
-            7'b0110011: // OP: only funct7 0000000, or 0100000 for SUB/SRA
+            7'b0110011: // OP: funct7 0000000, 0100000 for SUB/SRA, 0000001 (M: all funct3)
                 illegal = !((funct7 == 7'b0000000) ||
+                            (funct7 == 7'b0000001) ||
                             (funct7 == 7'b0100000 && (funct3 == 3'b000 || funct3 == 3'b101)));
             7'b0010011: // OP-IMM: shift-immediates constrain funct7
                 case (funct3)
@@ -81,15 +85,17 @@ module control_unit_pipe (
         mac_to_reg     = 1'b0;
         mac_rd_op      = 2'b00;
         is_mac_rdshift = 1'b0;
+        is_muldiv      = 1'b0;
         rs1_valid      = 1'b0;
         rs2_valid      = 1'b0;
 
         case (opcode)
 
-            // R-type
+            // R-type (funct7 0000001: M extension, result from mul_div)
             7'b0110011: begin
                 reg_write   = 1'b1;
                 alu_control = {funct7[5], funct3};
+                is_muldiv   = (funct7 == 7'b0000001);
                 rs1_valid   = 1'b1;
                 rs2_valid   = 1'b1;
             end
@@ -214,6 +220,7 @@ module control_unit_pipe (
             is_mac_clear   = 1'b0;
             mac_to_reg     = 1'b0;
             is_mac_rdshift = 1'b0;
+            is_muldiv      = 1'b0;
             rs1_valid      = 1'b0;
             rs2_valid      = 1'b0;
         end

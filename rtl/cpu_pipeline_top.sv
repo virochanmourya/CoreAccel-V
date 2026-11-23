@@ -1,7 +1,7 @@
 // ============================================================================
 // Module      : cpu_pipeline_top
 // File        : cpu_pipeline_top.sv
-// Description : 5-Stage Pipelined RV32I + DSP - Full ISA
+// Description : 5-Stage Pipelined RV32IM + DSP - Full ISA
 // ============================================================================
 
 module cpu_pipeline_top #(
@@ -50,6 +50,7 @@ module cpu_pipeline_top #(
     logic        id_branch;
     logic        id_alu_src_a, id_pc_to_reg, id_jump;
     logic        id_is_mac, id_is_mac_clear, id_mac_to_reg, id_is_mac_rdshift;
+    logic        id_is_muldiv;
     logic [1:0]  id_mac_rd_op;
     logic        id_rs1_valid, id_rs2_valid;
     logic        id_illegal, id_ex_illegal;
@@ -67,6 +68,7 @@ module cpu_pipeline_top #(
     logic [4:0]  id_ex_rs1_addr, id_ex_rs2_addr, id_ex_rd_addr;
     logic [2:0]  id_ex_funct3;
     logic        is_mac_ex, is_mac_clear_ex, mac_to_reg_ex, is_mac_rdshift_ex;
+    logic        is_muldiv_ex;
     logic [1:0]  mac_rd_op_ex;
 
     // ---- EX Stage ----
@@ -136,15 +138,26 @@ module cpu_pipeline_top #(
     logic [31:0] pc_branch, jalr_target, redirect_target;
     logic [31:0] pc_plus4_ex, ex_stage_result;
 
+    // ---- Multi-cycle EX ops: issue / done handshake (MAC unit and mul_div) ----
+    logic        mc_op_ex;        // a multi-cycle op is in EX
+    logic        mc_busy;         // the unit running it is busy
+    logic        mc_started_reg;  // the op in EX has been issued to its unit
+    logic        mc_start_pulse;  // issue it this cycle
+    logic        mc_done_ex;      // its unit has finished: result valid this cycle
+    logic        mc_hold;         // EX-hold source: multi-cycle op not done yet
+
     // ---- MAC ----
-    logic        mac_busy_ex, mac_started_reg, mac_start_pulse, mac_stall_request;
-    logic        mac_done_ex; // MAC in EX has finished and advances this cycle
+    logic        mac_busy_ex, mac_start_pulse;
     logic signed [63:0] mac_result_full_ex; // accumulator saturated to signed 64-bit
     logic [31:0] mac_read_shift_ex;  // READ_SHIFT result (registered in mac_unit)
     logic        mac_overflow_ex;    // sticky overflow (READ_STATUS bit 0)
     logic        mac_op_ex;          // multi-cycle MAC-unit op in EX: MAC or READ_SHIFT
     logic        mac_rd64_strobe;    // READ_LO/HI in EX (may set the sticky flag)
     logic [31:0] sliced_mac_result;
+
+    // ---- M extension (mul_div) ----
+    logic        muldiv_start, muldiv_busy;
+    logic [31:0] muldiv_result;      // registered in mul_div
 
     // ---- EX/MEM Register Outputs ----
     logic        ex_mem_reg_write, ex_mem_mem_to_reg, ex_mem_mem_read, ex_mem_mem_write;
@@ -183,7 +196,7 @@ module cpu_pipeline_top #(
     // nothing else may read a hold source directly. The testbench EX-hold
     // hook forces ex_hold and then re-forces it to ex_hold_src, so adding a
     // source here needs no testbench change.
-    assign ex_hold_src = mac_stall_request;
+    assign ex_hold_src = mc_hold;
     assign ex_hold     = ex_hold_src;
 
     assign pc_write        = ~(stall | ex_hold) | pc_redirect;
@@ -256,6 +269,7 @@ module cpu_pipeline_top #(
         .mac_to_reg     (id_mac_to_reg),
         .mac_rd_op      (id_mac_rd_op),
         .is_mac_rdshift (id_is_mac_rdshift),
+        .is_muldiv      (id_is_muldiv),
         .rs1_valid      (id_rs1_valid),
         .rs2_valid      (id_rs2_valid),
         .illegal        (id_illegal)
@@ -330,6 +344,8 @@ module cpu_pipeline_top #(
         .mac_to_reg_in   (id_mac_to_reg),   .mac_to_reg_out  (mac_to_reg_ex),
         .mac_rd_op_in    (id_mac_rd_op),    .mac_rd_op_out   (mac_rd_op_ex),
         .is_mac_rdshift_in(id_is_mac_rdshift), .is_mac_rdshift_out(is_mac_rdshift_ex),
+        // M extension
+        .is_muldiv_in    (id_is_muldiv),    .is_muldiv_out   (is_muldiv_ex),
         // Data
         .pc_in           (if_id_pc),        .pc_out          (id_ex_pc),
         .rs1_data_in     (id_rs1_data),     .rs1_data_out    (id_ex_rs1_data),
@@ -393,22 +409,35 @@ module cpu_pipeline_top #(
         .alu_result  (alu_result)
     );
 
-    // ---- MAC Pulse Generator & Stall ----
-    // Multi-cycle MAC-unit ops (MAC, READ_SHIFT) hold EX until they finish.
-    // mac_started_reg marks "the op currently in EX has been issued". It must
-    // be cleared on the cycle that op completes and leaves EX (mac_done_ex),
-    // not only when EX holds a non-MAC: otherwise a MAC immediately following
-    // another MAC sees started=1, gets no start pulse and no stall, and is lost.
-    assign mac_op_ex         = is_mac_ex | is_mac_rdshift_ex;
-    assign mac_done_ex       = mac_op_ex & mac_started_reg & ~mac_busy_ex;
-    assign mac_start_pulse   = mac_op_ex & ~mac_started_reg & ~mac_busy_ex;
-    assign mac_stall_request = mac_op_ex & ~mac_done_ex;
+    // ---- Multi-cycle EX ops: one issue / done handshake ----
+    // MAC-unit ops (MAC, READ_SHIFT) and M-extension ops (mul_div) hold EX
+    // until their unit finishes. At most one multi-cycle op is in EX, so the
+    // units are never busy at the same time and their busy flags can be ORed.
+    //   cycle 0      : op enters EX, start pulse to its unit, EX held
+    //   busy cycles  : EX held
+    //   done cycle   : unit idle again, result register valid, EX released
+    // mc_started_reg marks "the op in EX has been issued". It clears when the
+    // op actually leaves EX (~ex_hold), not when its unit finishes, so a
+    // second hold source keeping EX held after done can never re-issue the op
+    // (F1 was this logic: a back-to-back MAC saw started=1 and was lost).
+    // Every unit's result comes from a register, so nothing new sits between
+    // the forwarding muxes and the ALU. (Latching mul_div operands at start
+    // does add load on the forwarding muxes; see the timing notes.)
+    assign mac_op_ex      = is_mac_ex | is_mac_rdshift_ex;
+    assign mc_op_ex       = mac_op_ex | is_muldiv_ex;
+    assign mc_busy        = mac_busy_ex | muldiv_busy;
+    assign mc_start_pulse = mc_op_ex & ~mc_started_reg & ~mc_busy;
+    assign mc_done_ex     = mc_op_ex &  mc_started_reg & ~mc_busy;
+    assign mc_hold        = mc_op_ex & ~mc_done_ex;
+
+    assign mac_start_pulse = mc_start_pulse & mac_op_ex;
+    assign muldiv_start    = mc_start_pulse & is_muldiv_ex;
 
     always_ff @(posedge clk) begin
-        if (reset || !mac_op_ex || mac_done_ex)
-            mac_started_reg <= 1'b0;
-        else if (mac_start_pulse)
-            mac_started_reg <= 1'b1;
+        if (reset || !mc_op_ex || !ex_hold)
+            mc_started_reg <= 1'b0;
+        else if (mc_start_pulse)
+            mc_started_reg <= 1'b1;
     end
 
     // ---- TCM Port A: CPU data access (EX stage) ----
@@ -496,6 +525,21 @@ module cpu_pipeline_top #(
         .mac_overflow    (mac_overflow_ex)
     );
 
+    // ---- M extension: MUL/MULH/MULHSU/MULHU/DIV/DIVU/REM/REMU ----
+    // Separate from the MAC multiplier. Operands are latched on the start
+    // cycle from the forwarding muxes; the result is a register in mul_div.
+    // No kill input yet (nothing can interrupt an op held in EX today).
+    mul_div u_mul_div (
+        .clk       (clk),
+        .reset     (reset),
+        .start     (muldiv_start),
+        .op        (id_ex_funct3),
+        .operand_a (forwarded_a),
+        .operand_b (forwarded_b),
+        .busy      (muldiv_busy),
+        .result    (muldiv_result)
+    );
+
     // ---- MAC read select (result path into the EX result mux only) ----
     // All inputs are registers inside mac_unit; nothing here depends on the
     // forwarding muxes or the ALU.
@@ -518,6 +562,8 @@ module cpu_pipeline_top #(
             ex_stage_result = pc_plus4_ex;
         else if (mac_to_reg_ex)
             ex_stage_result = sliced_mac_result;
+        else if (is_muldiv_ex)
+            ex_stage_result = muldiv_result;
         else
             ex_stage_result = alu_result;
     end

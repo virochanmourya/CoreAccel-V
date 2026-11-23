@@ -54,6 +54,10 @@ module id_ex_reg (
     output logic [1:0]  mac_rd_op_out,
     output logic        is_mac_rdshift_out,
 
+    // M extension (mul_div op = funct3)
+    input  logic        is_muldiv_in,
+    output logic        is_muldiv_out,
+
     // Data
     input  logic [31:0] pc_in,
     input  logic [31:0] rs1_data_in,
@@ -105,6 +109,7 @@ module id_ex_reg (
             mac_to_reg_out     <= 1'b0;
             mac_rd_op_out      <= 2'b00;
             is_mac_rdshift_out <= 1'b0;
+            is_muldiv_out      <= 1'b0;
             pc_out             <= 32'd0;
             rs1_data_out       <= 32'd0;
             rs2_data_out       <= 32'd0;
@@ -131,6 +136,7 @@ module id_ex_reg (
             mac_to_reg_out     <= mac_to_reg_in;
             mac_rd_op_out      <= mac_rd_op_in;
             is_mac_rdshift_out <= is_mac_rdshift_in;
+            is_muldiv_out      <= is_muldiv_in;
             pc_out             <= pc_in;
             rs1_data_out       <= rs1_data_in;
             rs2_data_out       <= rs2_data_in;

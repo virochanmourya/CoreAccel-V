@@ -22,7 +22,7 @@ TIMEOUT         ?= 200000
 
 CC      := $(RISCV_PREFIX)gcc
 OBJDUMP := $(RISCV_PREFIX)objdump
-ARCH    := -march=rv32i -mabi=ilp32
+ARCH    := -march=rv32im -mabi=ilp32
 
 # ---------------------------------------------------------------- sources
 RTL_F   := $(ROOT)/rtl/rtl.f
