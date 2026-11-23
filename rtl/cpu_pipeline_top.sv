@@ -124,6 +124,7 @@ module cpu_pipeline_top #(
 
     // ---- MAC ----
     logic        mac_busy_ex, mac_started_reg, mac_start_pulse, mac_stall_request;
+    logic        mac_done_ex; // MAC in EX has finished and advances this cycle
     logic signed [63:0] mac_result_full_ex;
     logic        mac_overflow_ex;
     logic [31:0] sliced_mac_result;
@@ -362,15 +363,20 @@ module cpu_pipeline_top #(
     );
 
     // ---- MAC Pulse Generator & Stall ----
-    always_ff @(posedge clk) begin
-        if (reset || !is_mac_ex)
-            mac_started_reg <= 0;
-        else if (is_mac_ex && !mac_busy_ex)
-            mac_started_reg <= 1;
-    end
-
+    // mac_started_reg marks "the MAC currently in EX has been issued". It must
+    // be cleared on the cycle that MAC completes and leaves EX (mac_done_ex),
+    // not only when EX holds a non-MAC: otherwise a MAC immediately following
+    // another MAC sees started=1, gets no start pulse and no stall, and is lost.
+    assign mac_done_ex       = is_mac_ex & mac_started_reg & ~mac_busy_ex;
     assign mac_start_pulse   = is_mac_ex & ~mac_started_reg & ~mac_busy_ex;
-    assign mac_stall_request = is_mac_ex & ~(mac_started_reg & ~mac_busy_ex);
+    assign mac_stall_request = is_mac_ex & ~mac_done_ex;
+
+    always_ff @(posedge clk) begin
+        if (reset || !is_mac_ex || mac_done_ex)
+            mac_started_reg <= 1'b0;
+        else if (mac_start_pulse)
+            mac_started_reg <= 1'b1;
+    end
 
     // ---- TCM Port A: CPU data access (EX stage) ----
     // Loads and stores both present their address from EX: the 1-cycle BRAM
