@@ -72,6 +72,11 @@ module tb_top;
     longint      timeout;
     longint      cycles = 0;
     bit          halted = 1'b0;
+    int          sva_errors = 0;   // bumped via sva_fail() by bound assertion modules
+
+    function automatic void sva_fail();
+        sva_errors++;
+    endfunction
     logic [31:0] expected [0:MAX_SIG-1];
 
     initial begin
@@ -141,6 +146,9 @@ module tb_top;
 
         if (sig_words == 0)
             $display("RESULT FAIL test=%s cycles=%0d reason=no_signature", test_name, cycles);
+        else if (sva_errors != 0)
+            $display("RESULT FAIL test=%s cycles=%0d sva_errors=%0d mismatches=%0d/%0d",
+                     test_name, cycles, sva_errors, mismatches, sig_words);
         else if (mismatches == 0)
             $display("RESULT PASS test=%s cycles=%0d checks=%0d", test_name, cycles, sig_words);
         else

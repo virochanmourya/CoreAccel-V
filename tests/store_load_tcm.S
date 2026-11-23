@@ -9,6 +9,8 @@ wa:     .word 0xaaaaaaaa
 wb:     .word 0xbbbbbbbb
 wc:     .word 0xcccccccc
 wd:     .word 0xdddddddd
+we:     .word 0xeeeeeeee, 0xeeeeeeee, 0xeeeeeeee, 0xeeeeeeee
+src:    .word 0x55aa55aa
 
     TEST_BEGIN
     la      a0, wa
@@ -52,5 +54,32 @@ wd:     .word 0xdddddddd
     sw      a5, 0(a4)
     lw      a7, 0(a6)               // wd -> 0xdddddddd
     CHECK   a7, 0xdddddddd
+
+    // ---- store data arriving through forwarding, read straight back ----
+    la      a0, we
+    la      a1, src
+    nop
+    li      t0, 0x0f0f0f0f          // EX/MEM -> store data (addi right before sw)
+    sw      t0, 0(a0)
+    lw      t1, 0(a0)
+    CHECK   t1, 0x0f0f0f0f
+
+    li      t0, 0x3c3c3c3c          // MEM/WB -> store data
+    nop
+    sw      t0, 4(a0)
+    lw      t1, 4(a0)
+    CHECK   t1, 0x3c3c3c3c
+
+    lw      t0, 0(a1)               // load-use -> store data
+    sw      t0, 8(a0)
+    lw      t1, 8(a0)
+    CHECK   t1, 0x55aa55aa
+
+    li      t2, 0x01234567          // forwarded store data, then a different-address load
+    sw      t2, 12(a0)
+    lw      t3, 0(a0)
+    CHECK   t3, 0x0f0f0f0f
+    lw      t4, 12(a0)
+    CHECK   t4, 0x01234567
 
     TEST_END

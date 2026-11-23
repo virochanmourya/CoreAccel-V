@@ -70,7 +70,13 @@ module cpu_pipeline_top (
     // ---- TCM (Tightly Coupled Memory) ----
     logic        tcm_wea; // Port A write enable
     logic [9:0]  tcm_addra; // Port A address (1024 words)
+    logic [31:0] tcm_dina; // Port A write data
     logic [31:0] tcm_douta; // Port A read data
+    logic        ex_is_tcm; // EX-stage decode: effective address is in TCM
+    logic        ex_hold; // EX instruction does not advance this cycle
+    logic        cpu_tcm_we; // CPU port-A request: write (from EX)
+    logic [9:0]  cpu_tcm_addr; // CPU port-A request: word address (from EX)
+    logic [31:0] cpu_tcm_wdata; // CPU port-A request: write data (forwarded rs2)
     logic [9:0]  tcm_addrb; // Port B address (MAC weight read)
     logic [31:0] tcm_doutb; // Port B read data → MAC tcm_data
     logic        is_tcm_access; // Address decoder: 1 = TCM region
@@ -355,6 +361,26 @@ module cpu_pipeline_top (
     assign mac_start_pulse   = is_mac_ex & ~mac_started_reg & ~mac_busy_ex;
     assign mac_stall_request = is_mac_ex & ~(mac_started_reg & ~mac_busy_ex);
 
+    // ---- TCM Port A: CPU data access (EX stage) ----
+    // Loads and stores both present their address from EX: the 1-cycle BRAM
+    // read then lines up with MEM, and a store writes at the EX->MEM edge.
+    // Port A therefore never has to choose between two pipeline stages.
+    // A store writes exactly once: only on the cycle it leaves EX (~ex_hold).
+    // A store in EX is never speculative, because an older branch/jump resolves
+    // in EX and squashes it while it is still in ID.
+    // Future traps: memory faults (misaligned, unmapped) must be detected here
+    // in EX, where the address is computed, and gate cpu_tcm_we.
+    assign ex_is_tcm     = (alu_result[31:30] == 2'b10);
+    assign ex_hold       = id_ex_stall;
+    assign cpu_tcm_we    = id_ex_mem_write & ex_is_tcm & ~ex_hold;
+    assign cpu_tcm_addr  = alu_result[11:2];
+    assign cpu_tcm_wdata = forwarded_b;
+
+    // Single requester today; a DMA arbiter would sit between cpu_tcm_* and tcm_*.
+    assign tcm_wea   = cpu_tcm_we;
+    assign tcm_addra = cpu_tcm_addr;
+    assign tcm_dina  = cpu_tcm_wdata;
+
     // ---- TCM Port B: MAC Weight Stream (EX stage) ----
     assign tcm_addrb = forwarded_b[11:2];
 
@@ -444,7 +470,7 @@ module cpu_pipeline_top (
     // Gate memory control signals — each region is mutually exclusive
     assign dmem_mem_read  = ex_mem_mem_read  & ~is_tcm_access & ~is_gpio_access;
     assign dmem_mem_write = ex_mem_mem_write & ~is_tcm_access & ~is_gpio_access;
-    assign tcm_wea        = ex_mem_mem_write &  is_tcm_access;
+    // (TCM writes are issued from EX; see "TCM Port A" in the EX stage.)
 
     // ---- Peripheral Sub-Decode (0xC000_xxxx region) ----
     assign is_i2c_access  = is_gpio_access & (ex_mem_alu_result[3:2] == 2'b00);
@@ -453,9 +479,6 @@ module cpu_pipeline_top (
     assign gpio_we        = ex_mem_mem_write &  is_i2c_access;
     assign uart_we        = ex_mem_mem_write &  is_uart_access;
     assign seg_we         = ex_mem_mem_write &  is_seg_access;
-
-    // TCM Port A Address MUX — BRAM Latency Compensation
-    assign tcm_addra = tcm_wea ? ex_mem_alu_result[11:2] : alu_result[11:2];
 
     // Standard data memory (non-TCM region)
     data_memory u_dmem (
@@ -472,7 +495,7 @@ module cpu_pipeline_top (
         .clka   (clk),
         .wea    (tcm_wea),
         .addra  (tcm_addra),
-        .dina   (ex_mem_rs2_data),
+        .dina   (tcm_dina),
         .douta  (tcm_douta),
         .clkb   (clk),
         .addrb  (tcm_addrb),

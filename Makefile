@@ -26,7 +26,8 @@ ARCH    := -march=rv32i -mabi=ilp32
 # ---------------------------------------------------------------- sources
 RTL_F   := $(ROOT)/rtl/rtl.f
 RTL_SRC := $(addprefix $(ROOT)/,$(shell cat $(RTL_F)))
-TB_SV   := $(ROOT)/tb/commit_monitor.sv $(ROOT)/tb/uart_monitor.sv $(ROOT)/tb/tb_top.sv
+TB_SV   := $(ROOT)/tb/commit_monitor.sv $(ROOT)/tb/uart_monitor.sv $(ROOT)/tb/core_sva.sv \
+           $(ROOT)/tb/tb_top.sv
 TB_DEPS := $(TB_SV) $(wildcard $(ROOT)/tb/*.svh)
 
 TEST_DIR    := $(ROOT)/tests
@@ -59,6 +60,7 @@ XSIM_ENV  := source $(VIVADO_SETTINGS) >/dev/null 2>&1; cd $(SIM_DIR)
 sim-build: $(SIM_STAMP)
 
 $(SIM_STAMP): $(RTL_SRC) $(RTL_F) $(TB_DEPS)
+	@rm -f $(BUILD)/regress_summary.txt
 	@mkdir -p $(SIM_DIR)
 	@$(XSIM_ENV) && xvlog -sv -i $(ROOT)/tb $(RTL_SRC) $(TB_SV) > xvlog.log 2>&1 \
 	    || { grep -E 'ERROR|WARNING' xvlog.log; exit 1; }
@@ -86,6 +88,7 @@ test: $(BUILD)/tests/$(T)/plusargs.txt $(SIM_STAMP)
 
 .PHONY: regress
 regress: tests $(SIM_STAMP)
+	@rm -f $(BUILD)/regress_summary.txt
 	@for t in $(TESTS); do $(MAKE) --no-print-directory -s test T=$$t; done
 	@$(PYTHON) $(ROOT)/scripts/regress_summary.py $(BUILD)/tests $(TEST_DIR)/known_failures.txt $(TESTS)
 

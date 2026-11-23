@@ -2,10 +2,8 @@
 # Remove a line when its fix lands (the regression reports XPASS as a reminder).
 #
 # test              bug  description
-store_load_tcm      B1   TCM store in MEM steals port A from a TCM load in EX
 subword             B2   LB/LH/LBU/LHU/SB/SH execute as LW/SW
 mac_back_to_back    F1   second of two consecutive MACs is dropped
 mac_saturation      F2   64-bit accumulator readback wraps instead of saturating
-mac_tcm_raw         F4   MAC reads stale weight when a store to it is in MEM
 gpio_loopback       B3   I2C/GPIO pins are not connected (reads X)
 illegal             F5   unsupported encodings (MUL) write registers

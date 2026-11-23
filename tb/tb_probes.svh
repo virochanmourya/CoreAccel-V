@@ -1,6 +1,7 @@
 // ============================================================================
 // tb_probes.svh — every hierarchical reference into the DUT lives here.
-// When RTL signal names change, this is the only file to update.
+// When RTL signal names change, update this file and the bind port list at
+// the bottom of tb/core_sva.sv (the only other place that names DUT internals).
 // ============================================================================
 `ifndef TB_PROBES_SVH
 `define TB_PROBES_SVH
