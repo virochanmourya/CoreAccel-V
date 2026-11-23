@@ -8,6 +8,7 @@
 *.fst
 *.out
 sim_build/
+build/
 
 # Vivado Log & Journal Files
 *.jou

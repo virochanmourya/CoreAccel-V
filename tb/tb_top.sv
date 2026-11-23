@@ -1,0 +1,152 @@
+// ============================================================================
+// tb_top — CoreAccel-V directed-test harness (Vivado xsim)
+//
+// Plusargs (all paths absolute):
+//   +IMEM=<hex>        IMEM image (required)
+//   +TCM=<hex>         TCM image (optional)
+//   +EXPECTED=<hex>    expected signature, one word per line
+//   +SIG_BEGIN=<hex>   signature base address (in TCM)
+//   +SIG_WORDS=<n>     number of signature words to compare
+//   +SIGOUT=<file>     dump the observed signature here
+//   +TIMEOUT=<cycles>  default 200000
+//   +TEST=<name>       label used in the RESULT line
+//   +TRACE=<file>      register write-back log (commit_monitor)
+//
+// The test ends with a store to HALT_ADDR. Output ends with exactly one line:
+//   RESULT PASS|FAIL|TIMEOUT test=<name> cycles=<n> ...
+// ============================================================================
+`timescale 1ns/1ps
+`include "tb_probes.svh"
+
+module tb_top;
+
+    localparam logic [31:0] HALT_ADDR  = 32'hC000_0FFC;
+    localparam logic [31:0] TCM_BASE   = 32'h8000_0000;
+    localparam int          TCM_WORDS  = 1024;
+    localparam int          IMEM_WORDS = 2048;
+    localparam int          MAX_SIG    = 1024;
+    localparam int          DRAIN      = 8;    // cycles after halt before checking
+
+    // ---------------------------------------------------------------- DUT
+    logic       clk   = 1'b0;
+    logic       reset = 1'b1;
+    logic [7:0] debug_pc, debug_wb;
+    logic       uart_tx_out;
+    logic [6:0] seg;
+    logic       dp;
+    logic [3:0] an;
+    wire        i2c_scl, i2c_sda;
+
+    pullup (i2c_scl);
+    pullup (i2c_sda);
+
+    always #5 clk = ~clk;   // 100 MHz
+
+    cpu_pipeline_top dut (
+        .clk         (clk),
+        .reset       (reset),
+        .debug_pc    (debug_pc),
+        .debug_wb    (debug_wb),
+        .i2c_scl     (i2c_scl),
+        .i2c_sda     (i2c_sda),
+        .uart_tx_out (uart_tx_out),
+        .seg         (seg),
+        .dp          (dp),
+        .an          (an)
+    );
+
+    commit_monitor u_commit (
+        .clk     (clk),
+        .reset   (reset),
+        .wb_we   (`PRB_WB_WE),
+        .wb_rd   (`PRB_WB_RD),
+        .wb_data (`PRB_WB_DATA)
+    );
+
+    uart_monitor u_uart (.clk(clk), .rx(uart_tx_out));
+
+    // ---------------------------------------------------------------- config
+    string       test_name, imem_file, tcm_file, exp_file, sig_out;
+    logic [31:0] sig_begin;
+    int          sig_words;
+    longint      timeout;
+    longint      cycles = 0;
+    bit          halted = 1'b0;
+    logic [31:0] expected [0:MAX_SIG-1];
+
+    initial begin
+        if (!$value$plusargs("TEST=%s", test_name))      test_name = "unnamed";
+        if (!$value$plusargs("IMEM=%s", imem_file)) begin
+            $display("RESULT FAIL test=%s reason=no_IMEM_plusarg", test_name);
+            $finish;
+        end
+        if (!$value$plusargs("TCM=%s", tcm_file))        tcm_file  = "";
+        if (!$value$plusargs("EXPECTED=%s", exp_file))   exp_file  = "";
+        if (!$value$plusargs("SIG_BEGIN=%h", sig_begin)) sig_begin = '0;
+        if (!$value$plusargs("SIG_WORDS=%d", sig_words)) sig_words = 0;
+        if (!$value$plusargs("SIGOUT=%s", sig_out))      sig_out   = "";
+        if (!$value$plusargs("TIMEOUT=%d", timeout))     timeout   = 200_000;
+        if (sig_words > MAX_SIG) begin
+            $display("RESULT FAIL test=%s reason=SIG_WORDS_too_large", test_name);
+            $finish;
+        end
+
+        // Load memories after the RTL's own initial blocks (t=0), during reset.
+        #1;
+        for (int i = 0; i < IMEM_WORDS; i++) `PRB_IMEM_ARR[i] = 32'h0000_0013;  // NOP
+        for (int i = 0; i < TCM_WORDS;  i++) `PRB_TCM_ARR[i]  = 32'h0000_0000;
+        $readmemh(imem_file, `PRB_IMEM_ARR);
+        if (tcm_file != "") $readmemh(tcm_file, `PRB_TCM_ARR);
+        if (sig_words > 0)  $readmemh(exp_file, expected, 0, sig_words - 1);
+
+        repeat (5) @(posedge clk);
+        reset <= 1'b0;
+    end
+
+    // ---------------------------------------------------------------- halt / timeout
+    always @(posedge clk) begin
+        if (!reset && !halted) begin
+            cycles <= cycles + 1;
+            if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
+                halted = 1'b1;
+                fork check_and_finish(); join_none
+            end else if (cycles >= timeout) begin
+                $display("RESULT TIMEOUT test=%s cycles=%0d", test_name, cycles);
+                $finish;
+            end
+        end
+    end
+
+    function automatic logic [31:0] tcm_word(logic [31:0] addr);
+        return `PRB_TCM_ARR[(addr - TCM_BASE) >> 2];
+    endfunction
+
+    task automatic check_and_finish();
+        int fd = 0;
+        int mismatches = 0;
+        logic [31:0] got;
+        repeat (DRAIN) @(posedge clk);
+
+        if (sig_out != "") fd = $fopen(sig_out, "w");
+        for (int i = 0; i < sig_words; i++) begin
+            got = tcm_word(sig_begin + 4 * i);
+            if (fd != 0) $fdisplay(fd, "%08h", got);
+            if (got !== expected[i]) begin
+                mismatches++;
+                $display("MISMATCH test=%s idx=%0d addr=0x%08h got=0x%08h exp=0x%08h",
+                         test_name, i, sig_begin + 4 * i, got, expected[i]);
+            end
+        end
+        if (fd != 0) $fclose(fd);
+
+        if (sig_words == 0)
+            $display("RESULT FAIL test=%s cycles=%0d reason=no_signature", test_name, cycles);
+        else if (mismatches == 0)
+            $display("RESULT PASS test=%s cycles=%0d checks=%0d", test_name, cycles, sig_words);
+        else
+            $display("RESULT FAIL test=%s cycles=%0d mismatches=%0d/%0d",
+                     test_name, cycles, mismatches, sig_words);
+        $finish;
+    endtask
+
+endmodule
