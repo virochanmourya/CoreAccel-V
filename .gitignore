@@ -39,5 +39,17 @@ desktop.ini
 
 # Logs and Temp Files
 serial_log.txt
-$($w.Count)
 
+# Verilator / generated listings
+obj_dir/
+*.bin
+*.dis
+
+# Firmware objcopy intermediates
+*_bytes.hex
+
+# LibreLane / OpenROAD outputs
+runs/
+*.gds
+*.def
+*.odb

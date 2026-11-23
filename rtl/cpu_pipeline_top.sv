@@ -33,7 +33,7 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     // ---- IF Stage ----
-    logic [31:0] pc_current, pc_plus4, if_instruction;
+    logic [31:0] pc_current, if_instruction;
 
     // ---- IF/ID Register Outputs ----
     logic [31:0] if_id_pc, if_id_instruction;
@@ -131,7 +131,6 @@ module cpu_pipeline_top #(
     logic [15:0] seg_display_data; // Latched 16-bit display value (4 BCD digits)
 
     logic [31:0] alu_in1_final, alu_input_b, alu_result;
-    logic        alu_zero, alu_sign, alu_overflow, alu_carry;
     logic        branch_taken, pc_redirect;
     logic [31:0] pc_branch, jalr_target, redirect_target;
     logic [31:0] pc_plus4_ex, ex_stage_result;
@@ -148,7 +147,12 @@ module cpu_pipeline_top #(
 
     // ---- EX/MEM Register Outputs ----
     logic        ex_mem_reg_write, ex_mem_mem_to_reg, ex_mem_mem_read, ex_mem_mem_write;
-    logic [31:0] ex_mem_alu_result, ex_mem_rs2_data;
+    logic [31:0] ex_mem_alu_result;
+    // Store data in MEM feeds the peripherals; today's registers use <= 16 bits.
+    // Kept 32-bit for future 32-bit peripheral registers.
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [31:0] ex_mem_rs2_data;
+    /* verilator lint_on UNUSEDSIGNAL */
     logic [4:0]  ex_mem_rd_addr;
 
     // ---- MEM Stage (read data handled by address decoder below) ----
@@ -183,8 +187,6 @@ module cpu_pipeline_top #(
     //  IF STAGE
     // ========================================================================
 
-    assign pc_plus4 = pc_current + 32'd4;
-
     pc_pipe u_pc (
         .clk       (clk),
         .reset     (reset),
@@ -195,8 +197,7 @@ module cpu_pipeline_top #(
     );
 
     instruction_memory_pipe #(.INIT_FILE(IMEM_INIT)) u_imem (
-        .clk         (clk),
-        .addr        (pc_current),
+        .word_addr   (pc_current[12:2]),
         .instruction (if_instruction)
     );
 
@@ -379,11 +380,7 @@ module cpu_pipeline_top #(
         .alu_in1     (alu_in1_final),
         .alu_in2     (alu_input_b),
         .alu_control (id_ex_alu_control),
-        .alu_result  (alu_result),
-        .zero        (alu_zero),
-        .sign        (alu_sign),
-        .overflow    (alu_overflow),
-        .carry       (alu_carry)
+        .alu_result  (alu_result)
     );
 
     // ---- MAC Pulse Generator & Stall ----
@@ -472,7 +469,8 @@ module cpu_pipeline_top #(
     assign tcm_addrb = forwarded_b[11:2];
 
     // ---- MAC Unit (TCM-fed) ----
-    // mac_abort is wired to pc_redirect (branch taken | jump) to avoid aborting on load-use stalls.
+    // No abort input: a branch/jump resolves in EX and a MAC-unit op holds EX
+    // until it finishes, so a redirect can never coincide with an in-flight op.
     mac_unit dsp_core (
         .clk             (clk),
         .reset           (reset),
@@ -481,7 +479,6 @@ module cpu_pipeline_top #(
         .shamt           (forwarded_a[5:0]),  // latched at start (READ_SHIFT)
         .clear_accum     (is_mac_clear_ex),
         .rd64_strobe     (mac_rd64_strobe),
-        .mac_abort       (pc_redirect),
         .operand_a       (forwarded_a),
         .tcm_data        (tcm_doutb), // Fed by TCM Port B output
         .mac_result_full (mac_result_full_ex),

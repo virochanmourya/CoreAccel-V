@@ -27,7 +27,6 @@ module mac_unit (
     input  logic [5:0]         shamt,            // READ_SHIFT amount (sampled at start)
     input  logic               clear_accum,
     input  logic               rd64_strobe,      // a READ_LO/HI is reading acc_sat64 this cycle
-    input  logic               mac_abort,        // Pipeline redirect: kill in-flight op
     input  logic signed [31:0] operand_a,
     input  logic signed [31:0] tcm_data,         // Signed weight data from TCM Port B
     output logic signed [63:0] mac_result_full,  // acc saturated to signed 64-bit
@@ -119,7 +118,7 @@ module mac_unit (
 
   always_ff @(posedge clk)
   begin
-    if (reset || mac_abort)
+    if (reset)
       state <= IDLE;
     else
       state <= next_state;
@@ -137,7 +136,7 @@ module mac_unit (
       rounded_reg   <= 0;
       rs_result_reg <= 0;
     end
-    else if (!mac_abort)
+    else
     begin
       case (state)
         IDLE:
