@@ -1,21 +1,28 @@
 // ============================================================================
 // Module      : control_unit_pipe
 // File        : control_unit_pipe.sv
-// Description : RV32IM (no Zicsr/traps yet) + CUSTOM-0 DSP Control Unit.
+// Description : RV32IM + Zicsr (traps not yet) + CUSTOM-0 DSP Control Unit.
 //               Any encoding the core does not implement is flagged `illegal`
 //               and decodes as a bubble: all control outputs are 0, so it has
 //               no architectural effect. FENCE (funct3 000) is a legal NOP.
 //               Illegal: unknown opcodes (incl. 0x00000000 and compressed),
-//               SYSTEM (ECALL/EBREAK/CSR*), OP/OP-IMM funct7 values other than
+//               SYSTEM other than the CSR instructions and WFI (ECALL/EBREAK/
+//               MRET not yet), a CSR access to an address that does not exist
+//               or a write to a read-only CSR address, OP/OP-IMM funct7 values other than
 //               0000000, 0100000 (SUB/SRA/SRAI) and 0000001 (M extension, OP only),
 //               reserved load/store/branch/JALR/MISC-MEM funct3, and
 //               CUSTOM-0 funct3 010/111 or funct7 != 0.
 // ============================================================================
 
-module control_unit_pipe (
+module control_unit_pipe
+    import csr_pkg::*;
+(
     input  logic [6:0] opcode,
     input  logic [2:0] funct3,
     input  logic [6:0] funct7,
+    input  logic [11:0] imm12,     // instr[31:20]: CSR address / SYSTEM function
+    input  logic [4:0] rs1_field,  // instr[19:15]: rs1 or CSR uimm
+    input  logic [4:0] rd_field,   // instr[11:7]
     // Standard pipeline control
     output logic       reg_write,
     output logic       alu_src,
@@ -36,15 +43,33 @@ module control_unit_pipe (
     output logic       is_mac_rdshift, // READ_SHIFT (multi-cycle, uses the MAC FSM)
     // M extension: MUL/MULH/MULHSU/MULHU/DIV/DIVU/REM/REMU (op = funct3)
     output logic       is_muldiv,
+    // Zicsr: CSR instruction (op = funct3) and whether it writes the CSR
+    output logic       is_csr,
+    output logic       csr_we,
     output logic       rs1_valid,
     output logic       rs2_valid,
     // Unsupported / reserved encoding (becomes the illegal-instruction trap cause)
     output logic       illegal
 );
 
+    // ---- SYSTEM decode ----
+    // CSR ops: funct3 != 000/100. They write the CSR unless they are CSRRS/
+    // CSRRC(I) with rs1 = x0 / uimm = 0 (the rs1 field is zero).
+    // funct3 000: only WFI (a legal NOP here) for now.
+    logic sys_csr, sys_csr_we, sys_wfi;
+    assign sys_csr    = (funct3[1:0] != 2'b00);
+    assign sys_csr_we = (funct3[1:0] == 2'b01) || (rs1_field != 5'd0);
+    assign sys_wfi    = (funct3 == 3'b000) && (imm12 == 12'h105) &&
+                        (rs1_field == 5'd0) && (rd_field == 5'd0);
+
     // ---- Illegal / unsupported encoding decode ----
     always_comb begin
         case (opcode)
+            7'b1110011: // SYSTEM
+                if (sys_csr)
+                    illegal = !csr_exists(imm12) || (sys_csr_we && csr_addr_ro(imm12));
+                else
+                    illegal = !sys_wfi;
             7'b0110011: // OP: funct7 0000000, 0100000 for SUB/SRA, 0000001 (M: all funct3)
                 illegal = !((funct7 == 7'b0000000) ||
                             (funct7 == 7'b0000001) ||
@@ -86,6 +111,8 @@ module control_unit_pipe (
         mac_rd_op      = 2'b00;
         is_mac_rdshift = 1'b0;
         is_muldiv      = 1'b0;
+        is_csr         = 1'b0;
+        csr_we         = 1'b0;
         rs1_valid      = 1'b0;
         rs2_valid      = 1'b0;
 
@@ -204,6 +231,16 @@ module control_unit_pipe (
                 endcase
             end
 
+            // ---- SYSTEM: Zicsr (WFI decodes to all-zero controls: a NOP) ----
+            7'b1110011: begin
+                if (sys_csr) begin
+                    is_csr    = 1'b1;
+                    csr_we    = sys_csr_we;
+                    reg_write = 1'b1;
+                    rs1_valid = !funct3[2];     // register forms read rs1
+                end
+            end
+
             default: ;
         endcase
 
@@ -221,6 +258,8 @@ module control_unit_pipe (
             mac_to_reg     = 1'b0;
             is_mac_rdshift = 1'b0;
             is_muldiv      = 1'b0;
+            is_csr         = 1'b0;
+            csr_we         = 1'b0;
             rs1_valid      = 1'b0;
             rs2_valid      = 1'b0;
         end

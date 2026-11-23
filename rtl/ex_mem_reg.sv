@@ -40,11 +40,15 @@ module ex_mem_reg (
 
     // Load/store width
     input  logic [2:0]  funct3_in,
-    output logic [2:0]  funct3_out
+    output logic [2:0]  funct3_out,
+    // Valid instruction (0 for a bubble)
+    input  logic        valid_in,
+    output logic        valid_out
 );
 
     always_ff @(posedge clk) begin
         if (reset || flush) begin
+            valid_out <= 1'b0;
             reg_write_out   <= 1'b0;
             mem_to_reg_out  <= 1'b0;
             mem_read_out    <= 1'b0;
@@ -55,6 +59,7 @@ module ex_mem_reg (
             funct3_out      <= 3'd0;
         end
         else begin
+            valid_out <= valid_in;
             reg_write_out   <= reg_write_in;
             mem_to_reg_out  <= mem_to_reg_in;
             mem_read_out    <= mem_read_in;

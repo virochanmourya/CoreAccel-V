@@ -89,11 +89,23 @@ module id_ex_reg (
     // forwarded value must be captured every held cycle, or the instruction
     // falls back to the stale value read in ID.
     input  logic [31:0] rs1_fwd_in,
-    input  logic [31:0] rs2_fwd_in
+    input  logic [31:0] rs2_fwd_in,
+    // Valid instruction (0 for a bubble)
+    input  logic        valid_in,
+    output logic        valid_out,
+    // Zicsr: CSR instruction
+    input  logic        is_csr_in,
+    output logic        is_csr_out,
+    // Zicsr: the CSR instruction writes its CSR
+    input  logic        csr_we_in,
+    output logic        csr_we_out
 );
 
     always_ff @(posedge clk) begin
         if (reset || flush) begin
+            csr_we_out <= 1'b0;
+            is_csr_out <= 1'b0;
+            valid_out <= 1'b0;
             reg_write_out      <= 1'b0;
             mem_to_reg_out     <= 1'b0;
             mem_read_out       <= 1'b0;
@@ -121,6 +133,9 @@ module id_ex_reg (
             illegal_out        <= 1'b0;
         end
         else if (!stall) begin
+            csr_we_out <= csr_we_in;
+            is_csr_out <= is_csr_in;
+            valid_out <= valid_in;
             reg_write_out      <= reg_write_in;
             mem_to_reg_out     <= mem_to_reg_in;
             mem_read_out       <= mem_read_in;

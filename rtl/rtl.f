@@ -1,6 +1,8 @@
+rtl/csr_pkg.sv
 rtl/alu.sv
 rtl/mac_unit.sv
 rtl/mul_div.sv
+rtl/csr_file.sv
 rtl/imm_gen_pipe.sv
 rtl/control_unit_pipe.sv
 rtl/forwarding_unit.sv

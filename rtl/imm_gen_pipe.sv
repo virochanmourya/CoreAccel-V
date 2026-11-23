@@ -18,7 +18,8 @@ module imm_gen_pipe (
             // I-type: ADDI/SLTI/SLTIU/XORI/ORI/ANDI/SLLI/SRLI/SRAI, LW, JALR
             7'b0010011,
             7'b0000011,
-            7'b1100111: begin
+            7'b1100111,
+            7'b1110011: begin   // SYSTEM: imm[11:0] is the CSR address
                 imm_out = {{20{instruction[31]}}, instruction[31:20]};
             end
 

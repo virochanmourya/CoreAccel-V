@@ -1,7 +1,7 @@
 // ============================================================================
 // Module      : cpu_pipeline_top
 // File        : cpu_pipeline_top.sv
-// Description : 5-Stage Pipelined RV32IM + DSP - Full ISA
+// Description : 5-Stage Pipelined RV32IM + Zicsr + DSP - Full ISA
 // ============================================================================
 
 module cpu_pipeline_top #(
@@ -51,6 +51,7 @@ module cpu_pipeline_top #(
     logic        id_alu_src_a, id_pc_to_reg, id_jump;
     logic        id_is_mac, id_is_mac_clear, id_mac_to_reg, id_is_mac_rdshift;
     logic        id_is_muldiv;
+    logic        id_is_csr, id_csr_we;
     logic [1:0]  id_mac_rd_op;
     logic        id_rs1_valid, id_rs2_valid;
     logic        id_illegal, id_ex_illegal;
@@ -69,6 +70,7 @@ module cpu_pipeline_top #(
     logic [2:0]  id_ex_funct3;
     logic        is_mac_ex, is_mac_clear_ex, mac_to_reg_ex, is_mac_rdshift_ex;
     logic        is_muldiv_ex;
+    logic        is_csr_ex, csr_we_ex;
     logic [1:0]  mac_rd_op_ex;
 
     // ---- EX Stage ----
@@ -155,6 +157,14 @@ module cpu_pipeline_top #(
     logic        mac_rd64_strobe;    // READ_LO/HI in EX (may set the sticky flag)
     logic [31:0] sliced_mac_result;
 
+    // ---- Valid bits (0 = bubble), one per pipeline register ----
+    logic        if_id_valid, id_ex_valid, ex_mem_valid, mem_wb_valid;
+
+    // ---- Zicsr ----
+    logic [31:0] csr_rdata;     // CSR read value (EX)
+    logic [31:0] csr_wsrc;      // rs1 or zero-extended uimm
+    logic        csr_commit;    // CSR write takes effect at this EX->MEM edge
+
     // ---- M extension (mul_div) ----
     logic        muldiv_start, muldiv_busy;
     logic [31:0] muldiv_result;      // registered in mul_div
@@ -236,7 +246,9 @@ module cpu_pipeline_top #(
         .pc_in           (pc_current),
         .instruction_in  (if_instruction),
         .pc_out          (if_id_pc),
-        .instruction_out (if_id_instruction)
+        .instruction_out (if_id_instruction),
+        .valid_in        (1'b1),
+        .valid_out       (if_id_valid)
     );
 
     // ========================================================================
@@ -254,6 +266,9 @@ module cpu_pipeline_top #(
         .opcode         (id_opcode),
         .funct3         (id_funct3),
         .funct7         (id_funct7),
+        .imm12          (if_id_instruction[31:20]),
+        .rs1_field      (id_rs1),
+        .rd_field       (id_rd),
         .reg_write      (id_reg_write),
         .alu_src        (id_alu_src),
         .mem_read       (id_mem_read),
@@ -270,6 +285,8 @@ module cpu_pipeline_top #(
         .mac_rd_op      (id_mac_rd_op),
         .is_mac_rdshift (id_is_mac_rdshift),
         .is_muldiv      (id_is_muldiv),
+        .is_csr         (id_is_csr),
+        .csr_we         (id_csr_we),
         .rs1_valid      (id_rs1_valid),
         .rs2_valid      (id_rs2_valid),
         .illegal        (id_illegal)
@@ -360,7 +377,11 @@ module cpu_pipeline_top #(
         // Operand refresh while EX is held (see id_ex_reg)
         .rs1_fwd_in      (forwarded_a),     .rs2_fwd_in      (forwarded_b),
         // Illegal-instruction flag
-        .illegal_in      (id_illegal),      .illegal_out     (id_ex_illegal)
+        .illegal_in      (id_illegal),      .illegal_out     (id_ex_illegal),
+        // Valid bit, Zicsr
+        .valid_in        (if_id_valid),     .valid_out       (id_ex_valid),
+        .is_csr_in       (id_is_csr),       .is_csr_out      (is_csr_ex),
+        .csr_we_in       (id_csr_we),       .csr_we_out      (csr_we_ex)
     );
 
     // ========================================================================
@@ -540,6 +561,25 @@ module cpu_pipeline_top #(
         .result    (muldiv_result)
     );
 
+    // ---- Zicsr: CSR file, accessed in EX ----
+    // Read: address from the ID/EX immediate, value from registers, so the
+    // CSR read is an early input of the EX result mux. Write: at the EX->MEM
+    // edge when the CSR instruction leaves EX (~ex_hold), like a store.
+    // Immediate forms use the rs1 field (id_ex_rs1_addr) as a 5-bit uimm.
+    assign csr_wsrc   = id_ex_funct3[2] ? {27'b0, id_ex_rs1_addr} : forwarded_a;
+    assign csr_commit = is_csr_ex & csr_we_ex & ~ex_hold;
+
+    csr_file u_csr (
+        .clk         (clk),
+        .reset       (reset),
+        .addr        (id_ex_imm[11:0]),
+        .op          (id_ex_funct3[1:0]),
+        .wsrc        (csr_wsrc),
+        .we          (csr_commit),
+        .rdata       (csr_rdata),
+        .instret_inc (mem_wb_valid)
+    );
+
     // ---- MAC read select (result path into the EX result mux only) ----
     // All inputs are registers inside mac_unit; nothing here depends on the
     // forwarding muxes or the ALU.
@@ -564,6 +604,8 @@ module cpu_pipeline_top #(
             ex_stage_result = sliced_mac_result;
         else if (is_muldiv_ex)
             ex_stage_result = muldiv_result;
+        else if (is_csr_ex)
+            ex_stage_result = csr_rdata;
         else
             ex_stage_result = alu_result;
     end
@@ -611,7 +653,8 @@ module cpu_pipeline_top #(
         .alu_result_in   (ex_stage_result),  .alu_result_out (ex_mem_alu_result),
         .rs2_data_in     (ex_store_data),    .rs2_data_out   (ex_mem_rs2_data),
         .rd_addr_in      (id_ex_rd_addr),    .rd_addr_out    (ex_mem_rd_addr),
-        .funct3_in       (id_ex_funct3),     .funct3_out     (ex_mem_funct3)
+        .funct3_in       (id_ex_funct3),     .funct3_out     (ex_mem_funct3),
+        .valid_in        (id_ex_valid),      .valid_out      (ex_mem_valid)
     );
 
     // ========================================================================
@@ -784,7 +827,8 @@ module cpu_pipeline_top #(
         .mem_to_reg_in   (ex_mem_mem_to_reg), .mem_to_reg_out (mem_wb_mem_to_reg),
         .mem_data_in     (mem_load_data),    .mem_data_out   (mem_wb_mem_data),
         .alu_result_in   (ex_mem_alu_result),  .alu_result_out (mem_wb_alu_result),
-        .rd_addr_in      (ex_mem_rd_addr),     .rd_addr_out    (mem_wb_rd_addr)
+        .rd_addr_in      (ex_mem_rd_addr),     .rd_addr_out    (mem_wb_rd_addr),
+        .valid_in        (ex_mem_valid),       .valid_out      (mem_wb_valid)
     );
 
     // ========================================================================

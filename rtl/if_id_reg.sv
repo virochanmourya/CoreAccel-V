@@ -17,15 +17,20 @@ module if_id_reg (
     input  logic [31:0] pc_in,
     input  logic [31:0] instruction_in,
     output logic [31:0] pc_out,
-    output logic [31:0] instruction_out
+    output logic [31:0] instruction_out,
+    // Valid instruction (0 after reset/flush: a bubble)
+    input  logic        valid_in,
+    output logic        valid_out
 );
 
     always_ff @(posedge clk) begin
         if (reset || flush) begin
+            valid_out <= 1'b0;
             pc_out          <= 32'd0;
             instruction_out <= 32'h0000_0013;   // canonical NOP (addi x0, x0, 0)
         end
         else if (!stall) begin
+            valid_out <= valid_in;
             pc_out          <= pc_in;
             instruction_out <= instruction_in;
         end
