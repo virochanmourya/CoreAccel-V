@@ -1,13 +1,13 @@
 // ============================================================================
 // Module      : control_unit_pipe
 // File        : control_unit_pipe.sv
-// Description : RV32IM + Zicsr (traps not yet) + CUSTOM-0 DSP Control Unit.
+// Description : RV32IM + Zicsr + M-mode traps + CUSTOM-0 DSP Control Unit.
 //               Any encoding the core does not implement is flagged `illegal`
 //               and decodes as a bubble: all control outputs are 0, so it has
 //               no architectural effect. FENCE (funct3 000) is a legal NOP.
 //               Illegal: unknown opcodes (incl. 0x00000000 and compressed),
-//               SYSTEM other than the CSR instructions and WFI (ECALL/EBREAK/
-//               MRET not yet), a CSR access to an address that does not exist
+//               SYSTEM other than the CSR instructions, ECALL, EBREAK, MRET
+//               and WFI (exact encodings only), a CSR access to an address that does not exist
 //               or a write to a read-only CSR address, OP/OP-IMM funct7 values other than
 //               0000000, 0100000 (SUB/SRA/SRAI) and 0000001 (M extension, OP only),
 //               reserved load/store/branch/JALR/MISC-MEM funct3, and
@@ -23,6 +23,9 @@ module control_unit_pipe
     input  logic [11:0] imm12,     // instr[31:20]: CSR address / SYSTEM function
     input  logic [4:0] rs1_field,  // instr[19:15]: rs1 or CSR uimm
     input  logic [4:0] rd_field,   // instr[11:7]
+    // Turn the instruction into a bubble (fetch fault / interrupt tag): all
+    // controls 0, like an illegal encoding, but it is not reported illegal.
+    input  logic       squash,
     // Standard pipeline control
     output logic       reg_write,
     output logic       alu_src,
@@ -46,6 +49,10 @@ module control_unit_pipe
     // Zicsr: CSR instruction (op = funct3) and whether it writes the CSR
     output logic       is_csr,
     output logic       csr_we,
+    // SYSTEM: ECALL / EBREAK raise exceptions; MRET returns from a trap
+    output logic       is_ecall,
+    output logic       is_ebreak,
+    output logic       is_mret,
     output logic       rs1_valid,
     output logic       rs2_valid,
     // Unsupported / reserved encoding (becomes the illegal-instruction trap cause)
@@ -55,12 +62,16 @@ module control_unit_pipe
     // ---- SYSTEM decode ----
     // CSR ops: funct3 != 000/100. They write the CSR unless they are CSRRS/
     // CSRRC(I) with rs1 = x0 / uimm = 0 (the rs1 field is zero).
-    // funct3 000: only WFI (a legal NOP here) for now.
-    logic sys_csr, sys_csr_we, sys_wfi;
+    // funct3 000: ECALL, EBREAK, MRET, WFI (a legal NOP); exact encodings
+    // only (rs1 = rd = 0), anything else is illegal.
+    logic sys_csr, sys_csr_we, sys_wfi, sys_zero, sys_ecall, sys_ebreak, sys_mret;
     assign sys_csr    = (funct3[1:0] != 2'b00);
     assign sys_csr_we = (funct3[1:0] == 2'b01) || (rs1_field != 5'd0);
-    assign sys_wfi    = (funct3 == 3'b000) && (imm12 == 12'h105) &&
-                        (rs1_field == 5'd0) && (rd_field == 5'd0);
+    assign sys_zero   = (funct3 == 3'b000) && (rs1_field == 5'd0) && (rd_field == 5'd0);
+    assign sys_wfi    = sys_zero && (imm12 == 12'h105);
+    assign sys_ecall  = sys_zero && (imm12 == 12'h000);
+    assign sys_ebreak = sys_zero && (imm12 == 12'h001);
+    assign sys_mret   = sys_zero && (imm12 == 12'h302);
 
     // ---- Illegal / unsupported encoding decode ----
     always_comb begin
@@ -69,7 +80,7 @@ module control_unit_pipe
                 if (sys_csr)
                     illegal = !csr_exists(imm12) || (sys_csr_we && csr_addr_ro(imm12));
                 else
-                    illegal = !sys_wfi;
+                    illegal = !(sys_wfi || sys_ecall || sys_ebreak || sys_mret);
             7'b0110011: // OP: funct7 0000000, 0100000 for SUB/SRA, 0000001 (M: all funct3)
                 illegal = !((funct7 == 7'b0000000) ||
                             (funct7 == 7'b0000001) ||
@@ -89,7 +100,7 @@ module control_unit_pipe
             7'b1101111: illegal = 1'b0;                                           // JAL
             7'b0001111: illegal = (funct3 != 3'b000);   // FENCE ok; FENCE.I (Zifencei) not implemented
             7'b0001011: illegal = (funct7 != 7'b0000000) || (funct3 == 3'b010) || (funct3 == 3'b111);
-            default:    illegal = 1'b1;                 // SYSTEM, unknown, compressed, all-zero
+            default:    illegal = 1'b1;                 // unknown, compressed, all-zero
         endcase
     end
 
@@ -113,6 +124,9 @@ module control_unit_pipe
         is_muldiv      = 1'b0;
         is_csr         = 1'b0;
         csr_we         = 1'b0;
+        is_ecall       = 1'b0;
+        is_ebreak      = 1'b0;
+        is_mret        = 1'b0;
         rs1_valid      = 1'b0;
         rs2_valid      = 1'b0;
 
@@ -239,13 +253,17 @@ module control_unit_pipe
                     reg_write = 1'b1;
                     rs1_valid = !funct3[2];     // register forms read rs1
                 end
+                is_ecall  = sys_ecall;
+                is_ebreak = sys_ebreak;
+                is_mret   = sys_mret;
             end
 
             default: ;
         endcase
 
         // An illegal encoding is a bubble: no register, memory, branch or MAC effect.
-        if (illegal) begin
+        // So is a squashed instruction (fetch fault, interrupt tag).
+        if (illegal || squash) begin
             reg_write      = 1'b0;
             mem_read       = 1'b0;
             mem_write      = 1'b0;
@@ -260,6 +278,9 @@ module control_unit_pipe
             is_muldiv      = 1'b0;
             is_csr         = 1'b0;
             csr_we         = 1'b0;
+            is_ecall       = 1'b0;
+            is_ebreak      = 1'b0;
+            is_mret        = 1'b0;
             rs1_valid      = 1'b0;
             rs2_valid      = 1'b0;
         end

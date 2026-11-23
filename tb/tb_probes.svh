@@ -19,10 +19,11 @@
 `define PRB_DBUS_ERR   dut.dbus_error
 `define PRB_DBUS_ADDR  dut.ex_mem_alu_result
 
-// EX-stage error pulses (one per offending instruction) and the EX PC
-`define PRB_ILLEGAL_ERR  dut.illegal_insn_err
-`define PRB_MISALIGN_ERR dut.misaligned_err
-`define PRB_EX_PC        dut.id_ex_pc
+// Trap entry (taken in MEM): one cycle per trap, with its cause/PC/tval
+`define PRB_TRAP         dut.mem_trap
+`define PRB_TRAP_CAUSE   dut.ex_mem_cause
+`define PRB_TRAP_PC      dut.ex_mem_pc
+`define PRB_TRAP_TVAL    dut.ex_mem_tval
 
 // EX stage: a TCM store is in EX, and the EX hold signal (forced by the
 // +HOLD_EX_STORES hook to emulate a multi-cycle unit / DMA arbiter holding EX)

@@ -25,6 +25,12 @@
 //     mvendorid, marchid, mimpid, mhartid, mconfigptr: read 0, writes ignored
 //   A write to a counter half replaces that half for this cycle (no
 //   increment, no carry between halves on that cycle).
+//
+//   Traps (taken in MEM by the core): trap_take saves the PC, cause and
+//   tval, MPIE <= MIE, MIE <= 0. mret_take: MIE <= MPIE, MPIE <= 1 (MPP
+//   stays M). mtvec/mepc are outputs for the PC redirect. The core kills a
+//   younger CSR write in EX on those cycles, so the two never collide; trap
+//   entry still has priority in this file.
 // ============================================================================
 
 module csr_file
@@ -39,7 +45,17 @@ module csr_file
     input  logic        we,          // commit the write this cycle
     output logic [31:0] rdata,
     // Counters
-    input  logic        instret_inc  // one instruction retired this cycle
+    input  logic        instret_inc, // one instruction retired this cycle
+    // Trap entry / return (MEM stage)
+    input  logic        trap_take,
+    input  logic [4:0]  trap_cause,  // {interrupt, code[3:0]}
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic [31:0] trap_pc,     // [1:0] always 0 (IALIGN = 32), not stored
+    /* verilator lint_on UNUSEDSIGNAL */
+    input  logic [31:0] trap_tval,
+    input  logic        mret_take,
+    output logic [31:0] mtvec_o,
+    output logic [31:0] mepc_o
 );
 
     // ---- State ----
@@ -59,6 +75,8 @@ module csr_file
     assign mstatus_rd = {19'b0, 2'b11, 3'b0, mstatus_mpie, 3'b0, mstatus_mie, 3'b0};
     assign mie_rd     = {20'b0, mie_meie, 3'b0, mie_mtie, 7'b0};
     assign mip_rd     = 32'b0;
+    assign mtvec_o    = {mtvec_base, 2'b00};
+    assign mepc_o     = {mepc_q, 2'b00};
 
     // ---- Read mux ----
     always_comb begin
@@ -116,7 +134,17 @@ module csr_file
             else if (we && addr == CSR_MINSTRETH) minstret_q <= {wdata, minstret_inc[31:0]};
             else                                  minstret_q <= minstret_inc;
 
-            if (we) begin
+            if (trap_take) begin
+                mepc_q       <= trap_pc[31:2];
+                mcause_int   <= trap_cause[4];
+                mcause_code  <= trap_cause[3:0];
+                mtval_q      <= trap_tval;
+                mstatus_mpie <= mstatus_mie;
+                mstatus_mie  <= 1'b0;
+            end else if (mret_take) begin
+                mstatus_mie  <= mstatus_mpie;
+                mstatus_mpie <= 1'b1;
+            end else if (we) begin
                 case (addr)
                     CSR_MSTATUS: begin
                         mstatus_mie  <= wdata[3];

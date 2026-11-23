@@ -1,7 +1,7 @@
 // ============================================================================
 // Module      : cpu_pipeline_top
 // File        : cpu_pipeline_top.sv
-// Description : 5-Stage Pipelined RV32IM + Zicsr + DSP - Full ISA
+// Description : 5-Stage Pipelined RV32IM + Zicsr + M-mode traps + DSP
 // ============================================================================
 
 module cpu_pipeline_top #(
@@ -54,7 +54,7 @@ module cpu_pipeline_top #(
     logic        id_is_csr, id_csr_we;
     logic [1:0]  id_mac_rd_op;
     logic        id_rs1_valid, id_rs2_valid;
-    logic        id_illegal, id_ex_illegal;
+    logic        id_illegal;
 
     // ---- ID Stage: Data ----
     logic [31:0] id_imm, rf_read_data1, rf_read_data2, id_rs1_data, id_rs2_data;
@@ -104,13 +104,10 @@ module cpu_pipeline_top #(
     logic        is_periph_mapped; // A defined register inside the peripheral page
     logic        is_tohost; // 0xC000_0FFC: reserved simulation halt (writes ignored)
     logic        mem_access; // Load or store in MEM
-    // ---- Trap-cause stubs: error pulses, one per offending instruction ----
-    // Not consumed by any logic yet; they become trap causes when Zicsr and
-    // traps are added (the testbench counts them per test).
+    // ---- Unmapped data access (MEM): read-as-zero / write-ignored ----
+    // Not a trap (platform choice: holes are RAZ/WI); the testbench counts it.
     /* verilator lint_off UNUSEDSIGNAL */
     logic        dbus_error;       // MEM: load/store to an unmapped address
-    logic        illegal_insn_err; // EX:  unsupported / reserved encoding
-    logic        misaligned_err;   // EX:  misaligned LW/SW/LH/SH (access squashed)
     /* verilator lint_on UNUSEDSIGNAL */
     logic        ex_misaligned;    // EX:  load/store address not naturally aligned
 
@@ -144,18 +141,45 @@ module cpu_pipeline_top #(
     logic        mc_op_ex;        // a multi-cycle op is in EX
     logic        mc_busy;         // the unit running it is busy
     logic        mc_started_reg;  // the op in EX has been issued to its unit
-    logic        mc_start_pulse;  // issue it this cycle
+    logic        mc_start_pulse;  // issue it this cycle (unless killed)
+    logic        mc_issue;        // start pulse that is not killed
     logic        mc_done_ex;      // its unit has finished: result valid this cycle
     logic        mc_hold;         // EX-hold source: multi-cycle op not done yet
 
     // ---- MAC ----
     logic        mac_busy_ex, mac_start_pulse;
+    logic        mac_clear_commit;   // MAC_CLEAR leaves EX this cycle (not killed)
     logic signed [63:0] mac_result_full_ex; // accumulator saturated to signed 64-bit
     logic [31:0] mac_read_shift_ex;  // READ_SHIFT result (registered in mac_unit)
     logic        mac_overflow_ex;    // sticky overflow (READ_STATUS bit 0)
     logic        mac_op_ex;          // multi-cycle MAC-unit op in EX: MAC or READ_SHIFT
     logic        mac_rd64_strobe;    // READ_LO/HI in EX (may set the sticky flag)
     logic [31:0] sliced_mac_result;
+
+    // ---- Traps (machine mode) ----
+    // Exceptions are flagged where they are detected (IF: fetch fault; ID:
+    // illegal, ECALL, EBREAK; EX: misaligned load/store or branch/jump
+    // target), travel down the pipeline with the instruction, and are taken
+    // in MEM from the registered EX/MEM flag.
+    logic        if_fetch_fault, if_id_fetch_fault;
+    logic        id_is_ecall, id_is_ebreak, id_is_mret;
+    logic        id_exc;                    // ID-stage exception
+    logic [4:0]  id_cause;                  // {interrupt, code}
+    logic        id_ex_exc, id_ex_is_mret;
+    logic [4:0]  id_ex_cause;
+    logic        ex_target_misaligned;      // taken branch/jump to a target with bit 1 set
+    logic        ex_exc;                    // EX instruction traps when it reaches MEM
+    logic [4:0]  ex_cause;
+    logic [31:0] ex_tval;
+    logic        ex_mem_exc, ex_mem_is_mret;
+    logic [4:0]  ex_mem_cause;
+    logic [31:0] ex_mem_pc, ex_mem_tval;
+    logic        mem_trap;                  // take a trap this cycle
+    logic        mem_mret;                  // MRET returns this cycle
+    logic        mem_redirect;              // trap or MRET: PC <= mtvec / mepc
+    logic [31:0] mem_redirect_target;
+    logic        ex_kill;                   // the EX instruction is younger than a trap/MRET: commit nothing
+    logic [31:0] csr_mtvec, csr_mepc;
 
     // ---- Valid bits (0 = bubble), one per pipeline register ----
     logic        if_id_valid, id_ex_valid, ex_mem_valid, mem_wb_valid;
@@ -209,12 +233,15 @@ module cpu_pipeline_top #(
     assign ex_hold_src = mc_hold;
     assign ex_hold     = ex_hold_src;
 
-    assign pc_write        = ~(stall | ex_hold) | pc_redirect;
+    // A trap or MRET in MEM (mem_redirect) is older than everything in
+    // IF/ID/EX: it wins over an EX redirect and over any hold, and flushes
+    // IF/ID, ID/EX and EX/MEM (ex_kill blocks the EX instruction's commits).
+    assign pc_write        = ~(stall | ex_hold) | pc_redirect | mem_redirect;
     assign if_id_stall     = (stall | ex_hold) & ~pc_redirect;
-    assign if_id_flush     = pc_redirect;
-    assign id_ex_flush     = stall | pc_redirect;
+    assign if_id_flush     = pc_redirect | mem_redirect;
+    assign id_ex_flush     = stall | pc_redirect | mem_redirect;
     assign id_ex_stall     = ex_hold;
-    assign ex_mem_flush_sig = ex_hold;
+    assign ex_mem_flush_sig = ex_hold | ex_kill;
 
     // ========================================================================
     //  IF STAGE
@@ -224,10 +251,15 @@ module cpu_pipeline_top #(
         .clk       (clk),
         .reset     (reset),
         .pc_write  (pc_write),
-        .pc_src    (pc_redirect),
-        .pc_branch (redirect_target),
+        .pc_src    (pc_redirect | mem_redirect),
+        .pc_branch (mem_redirect ? mem_redirect_target : redirect_target),
         .pc_out    (pc_current)
     );
+
+    // Instruction access fault: the IMEM is 8 KB at 0x0000_0000; a PC
+    // outside it fetches nothing valid (the instruction is squashed in ID
+    // and traps with cause 1 if it reaches MEM).
+    assign if_fetch_fault = (pc_current[31:13] != 19'd0);
 
     instruction_memory_pipe #(.INIT_FILE(IMEM_INIT)) u_imem (
         .word_addr   (pc_current[12:2]),
@@ -248,7 +280,9 @@ module cpu_pipeline_top #(
         .pc_out          (if_id_pc),
         .instruction_out (if_id_instruction),
         .valid_in        (1'b1),
-        .valid_out       (if_id_valid)
+        .valid_out       (if_id_valid),
+        .fetch_fault_in  (if_fetch_fault),
+        .fetch_fault_out (if_id_fetch_fault)
     );
 
     // ========================================================================
@@ -269,6 +303,7 @@ module cpu_pipeline_top #(
         .imm12          (if_id_instruction[31:20]),
         .rs1_field      (id_rs1),
         .rd_field       (id_rd),
+        .squash         (if_id_fetch_fault),
         .reg_write      (id_reg_write),
         .alu_src        (id_alu_src),
         .mem_read       (id_mem_read),
@@ -287,6 +322,9 @@ module cpu_pipeline_top #(
         .is_muldiv      (id_is_muldiv),
         .is_csr         (id_is_csr),
         .csr_we         (id_csr_we),
+        .is_ecall       (id_is_ecall),
+        .is_ebreak      (id_is_ebreak),
+        .is_mret        (id_is_mret),
         .rs1_valid      (id_rs1_valid),
         .rs2_valid      (id_rs2_valid),
         .illegal        (id_illegal)
@@ -316,6 +354,16 @@ module cpu_pipeline_top #(
     assign id_rs2_data = (mem_wb_reg_write && (mem_wb_rd_addr != 5'd0)
     && (mem_wb_rd_addr == id_rs2))
     ? wb_data : rf_read_data2;
+
+    // ---- ID-stage exceptions (priority: fetch fault, illegal, EBREAK, ECALL) ----
+    // The control unit already turned the instruction into a bubble.
+    assign id_exc = if_id_fetch_fault | id_illegal | id_is_ecall | id_is_ebreak;
+    always_comb begin
+        if (if_id_fetch_fault) id_cause = 5'd1;    // instruction access fault
+        else if (id_illegal)   id_cause = 5'd2;    // illegal instruction
+        else if (id_is_ebreak) id_cause = 5'd3;    // breakpoint
+        else                   id_cause = 5'd11;   // ECALL from M-mode
+    end
 
     // ========================================================================
     //  Hazard Detection Unit
@@ -377,11 +425,13 @@ module cpu_pipeline_top #(
         // Operand refresh while EX is held (see id_ex_reg)
         .rs1_fwd_in      (forwarded_a),     .rs2_fwd_in      (forwarded_b),
         // Illegal-instruction flag
-        .illegal_in      (id_illegal),      .illegal_out     (id_ex_illegal),
+        .exc_in          (id_exc),          .exc_out         (id_ex_exc),
         // Valid bit, Zicsr
         .valid_in        (if_id_valid),     .valid_out       (id_ex_valid),
         .is_csr_in       (id_is_csr),       .is_csr_out      (is_csr_ex),
-        .csr_we_in       (id_csr_we),       .csr_we_out      (csr_we_ex)
+        .csr_we_in       (id_csr_we),       .csr_we_out      (csr_we_ex),
+        .cause_in        (id_cause),        .cause_out       (id_ex_cause),
+        .is_mret_in      (id_is_mret),      .is_mret_out     (id_ex_is_mret)
     );
 
     // ========================================================================
@@ -451,13 +501,16 @@ module cpu_pipeline_top #(
     assign mc_done_ex     = mc_op_ex &  mc_started_reg & ~mc_busy;
     assign mc_hold        = mc_op_ex & ~mc_done_ex;
 
-    assign mac_start_pulse = mc_start_pulse & mac_op_ex;
-    assign muldiv_start    = mc_start_pulse & is_muldiv_ex;
+    // A start in the cycle a trap/MRET is taken in MEM is killed: the op is
+    // younger and is flushed from EX, so its unit must never start.
+    assign mc_issue        = mc_start_pulse & ~ex_kill;
+    assign mac_start_pulse = mc_issue & mac_op_ex;
+    assign muldiv_start    = mc_issue & is_muldiv_ex;
 
     always_ff @(posedge clk) begin
         if (reset || !mc_op_ex || !ex_hold)
             mc_started_reg <= 1'b0;
-        else if (mc_start_pulse)
+        else if (mc_issue)
             mc_started_reg <= 1'b1;
     end
 
@@ -468,8 +521,7 @@ module cpu_pipeline_top #(
     // A store writes exactly once: only on the cycle it leaves EX (~ex_hold).
     // A store in EX is never speculative, because an older branch/jump resolves
     // in EX and squashes it while it is still in ID.
-    // Future traps: memory faults (misaligned, unmapped) must be detected here
-    // in EX, where the address is computed, and gate cpu_tcm_we.
+    // A store younger than a trap/MRET in MEM is killed (~ex_kill).
     //
     // AGU: a dedicated adder computes the load/store effective address from
     // the forwarded base and the immediate, so the TCM address, byte lanes and
@@ -479,7 +531,7 @@ module cpu_pipeline_top #(
     // 0x8000_0000-0x8000_0FFF writes nothing (it raises dbus_error in MEM).
     assign ex_eff_addr   = forwarded_a + id_ex_imm;
     assign ex_is_tcm     = (ex_eff_addr[31:12] == 20'h80000);
-    assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ~ex_hold}};
+    assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ~ex_hold & ~ex_kill}};
     assign cpu_tcm_addr  = ex_eff_addr[11:2];
     assign cpu_tcm_wdata = ex_store_data;
 
@@ -490,17 +542,15 @@ module cpu_pipeline_top #(
     // addr[0] (SH) / addr[1:0] (SW) are ignored.
     assign ex_addr_lo = ex_eff_addr[1:0];
 
-    // ---- Misaligned LW/SW/LH/SH: detected in EX, access squashed ----
+    // ---- Misaligned LW/SW/LH/SH: detected in EX, access squashed, traps ----
     // A misaligned access has no architectural effect: no TCM write, and its
     // EX/MEM memory and register-write controls are cleared, so it reaches
     // neither a peripheral nor the register file (nor raises dbus_error).
+    // It traps in MEM (cause 4 load / 6 store, mtval = address).
     assign ex_misaligned = (id_ex_mem_read | id_ex_mem_write) &
                            (((id_ex_funct3[1:0] == 2'b10) & (ex_addr_lo != 2'b00)) |  // LW/SW
                             ((id_ex_funct3[1:0] == 2'b01) &  ex_addr_lo[0]));         // LH/LHU/SH
 
-    // Error pulses: once per instruction, on the cycle it leaves EX.
-    assign misaligned_err   = ex_misaligned & ~ex_hold;
-    assign illegal_insn_err = id_ex_illegal & ~ex_hold;
 
     always_comb begin
         case (id_ex_funct3[1:0])
@@ -536,7 +586,7 @@ module cpu_pipeline_top #(
         .mac_start       (mac_start_pulse),
         .start_is_shift  (is_mac_rdshift_ex),
         .shamt           (forwarded_a[5:0]),  // latched at start (READ_SHIFT)
-        .clear_accum     (is_mac_clear_ex),
+        .clear_accum     (mac_clear_commit),
         .rd64_strobe     (mac_rd64_strobe),
         .operand_a       (forwarded_a),
         .tcm_data        (tcm_doutb), // Fed by TCM Port B output
@@ -567,7 +617,7 @@ module cpu_pipeline_top #(
     // edge when the CSR instruction leaves EX (~ex_hold), like a store.
     // Immediate forms use the rs1 field (id_ex_rs1_addr) as a 5-bit uimm.
     assign csr_wsrc   = id_ex_funct3[2] ? {27'b0, id_ex_rs1_addr} : forwarded_a;
-    assign csr_commit = is_csr_ex & csr_we_ex & ~ex_hold;
+    assign csr_commit = is_csr_ex & csr_we_ex & ~ex_hold & ~ex_kill;
 
     csr_file u_csr (
         .clk         (clk),
@@ -577,13 +627,24 @@ module cpu_pipeline_top #(
         .wsrc        (csr_wsrc),
         .we          (csr_commit),
         .rdata       (csr_rdata),
-        .instret_inc (mem_wb_valid)
+        .instret_inc (mem_wb_valid),
+        .trap_take   (mem_trap),
+        .trap_cause  (ex_mem_cause),
+        .trap_pc     (ex_mem_pc),
+        .trap_tval   (ex_mem_tval),
+        .mret_take   (mem_mret),
+        .mtvec_o     (csr_mtvec),
+        .mepc_o      (csr_mepc)
     );
 
     // ---- MAC read select (result path into the EX result mux only) ----
     // All inputs are registers inside mac_unit; nothing here depends on the
     // forwarding muxes or the ALU.
-    assign mac_rd64_strobe = mac_to_reg_ex & ~mac_rd_op_ex[1];
+    // EX commit points of the MAC that are not start pulses: MAC_CLEAR and the
+    // sticky-overflow update of READ_LO/HI. Both commit once, when the
+    // instruction leaves EX, and never when it is killed.
+    assign mac_rd64_strobe  = mac_to_reg_ex & ~mac_rd_op_ex[1] & ~ex_hold & ~ex_kill;
+    assign mac_clear_commit = is_mac_clear_ex & ~ex_hold & ~ex_kill;
 
     always_comb begin
         case (mac_rd_op_ex)
@@ -638,6 +699,29 @@ module cpu_pipeline_top #(
             redirect_target = pc_branch;
     end
 
+    // ---- EX-stage exceptions ----
+    // Instruction-address-misaligned: a taken branch / JAL / JALR whose target
+    // has bit 1 set (IALIGN = 32). The redirect still happens in EX, but the
+    // instruction traps in MEM one cycle later and that trap flushes whatever
+    // was fetched from the target, so architecturally no jump happens (and a
+    // JAL/JALR writes no link register). Keeping the exception out of
+    // pc_redirect keeps it off the redirect cone.
+    assign ex_target_misaligned = pc_redirect & redirect_target[1];
+    assign ex_exc = id_ex_exc | ex_misaligned | ex_target_misaligned;
+
+    always_comb begin
+        if (id_ex_exc) begin
+            ex_cause = id_ex_cause;
+            ex_tval  = (id_ex_cause == 5'd1) ? id_ex_pc : 32'd0;   // fetch fault: the PC
+        end else if (ex_misaligned) begin
+            ex_cause = id_ex_mem_write ? 5'd6 : 5'd4;
+            ex_tval  = ex_eff_addr;
+        end else begin
+            ex_cause = 5'd0;                                      // target misaligned
+            ex_tval  = redirect_target;
+        end
+    end
+
     // ========================================================================
     //  EX/MEM Pipeline Register
     // ========================================================================
@@ -646,7 +730,7 @@ module cpu_pipeline_top #(
         .clk             (clk),
         .reset           (reset),
         .flush           (ex_mem_flush_sig),
-        .reg_write_in    (id_ex_reg_write & ~ex_misaligned), .reg_write_out (ex_mem_reg_write),
+        .reg_write_in    (id_ex_reg_write & ~ex_exc), .reg_write_out (ex_mem_reg_write),
         .mem_to_reg_in   (id_ex_mem_to_reg), .mem_to_reg_out (ex_mem_mem_to_reg),
         .mem_read_in     (id_ex_mem_read  & ~ex_misaligned), .mem_read_out  (ex_mem_mem_read),
         .mem_write_in    (id_ex_mem_write & ~ex_misaligned), .mem_write_out (ex_mem_mem_write),
@@ -654,8 +738,26 @@ module cpu_pipeline_top #(
         .rs2_data_in     (ex_store_data),    .rs2_data_out   (ex_mem_rs2_data),
         .rd_addr_in      (id_ex_rd_addr),    .rd_addr_out    (ex_mem_rd_addr),
         .funct3_in       (id_ex_funct3),     .funct3_out     (ex_mem_funct3),
-        .valid_in        (id_ex_valid),      .valid_out      (ex_mem_valid)
+        .valid_in        (id_ex_valid),      .valid_out      (ex_mem_valid),
+        .exc_in          (ex_exc),           .exc_out        (ex_mem_exc),
+        .cause_in        (ex_cause),         .cause_out      (ex_mem_cause),
+        .pc_in           (id_ex_pc),         .pc_out         (ex_mem_pc),
+        .tval_in         (ex_tval),          .tval_out       (ex_mem_tval),
+        .is_mret_in      (id_ex_is_mret),    .is_mret_out    (ex_mem_is_mret)
     );
+
+    // ========================================================================
+    //  MEM STAGE — trap / MRET
+    // ========================================================================
+    // Every input is a register (EX/MEM), so the trap decision is early:
+    // ex_kill gates the EX commit points (TCM store, MAC/mul_div start,
+    // MAC_CLEAR, READ_LO/HI sticky flag, CSR write) of the younger
+    // instruction in EX, and mem_redirect wins the PC mux.
+    assign mem_trap            = ex_mem_exc;
+    assign mem_mret            = ex_mem_is_mret;
+    assign mem_redirect        = mem_trap | mem_mret;
+    assign mem_redirect_target = mem_trap ? csr_mtvec : csr_mepc;
+    assign ex_kill             = mem_redirect;
 
     // ========================================================================
     //  MEM STAGE — Address Decoder & Memory Subsystems
@@ -828,7 +930,7 @@ module cpu_pipeline_top #(
         .mem_data_in     (mem_load_data),    .mem_data_out   (mem_wb_mem_data),
         .alu_result_in   (ex_mem_alu_result),  .alu_result_out (mem_wb_alu_result),
         .rd_addr_in      (ex_mem_rd_addr),     .rd_addr_out    (mem_wb_rd_addr),
-        .valid_in        (ex_mem_valid),       .valid_out      (mem_wb_valid)
+        .valid_in        (ex_mem_valid & ~mem_trap), .valid_out (mem_wb_valid)  // a trapping instruction does not retire
     );
 
     // ========================================================================

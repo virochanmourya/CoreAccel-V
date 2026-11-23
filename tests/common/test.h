@@ -6,7 +6,13 @@
 // non-loaded .expected section, in the same order, right next to the code.
 // The harness halts on a store to HALT_ADDR and compares the two.
 //
-// Reserved registers: s11 = signature pointer, t6 = scratch for TEST_END.
+// Reserved registers: s11 = signature pointer, t6 = scratch for TEST_END and
+// the trap handler. The handler also uses mscratch (to save t5).
+//
+// Traps: TEST_BEGIN points mtvec at _trap_entry, which records the trap in
+// trap_rec (see TR_* offsets) and resumes: at mepc + 4 for an exception, at
+// ra for an instruction access fault (cause 1: mepc is the bad target, so
+// "return from the call"), and at mepc for an interrupt.
 // ============================================================================
 
 #define HALT_ADDR   0xC0000FFC
@@ -16,12 +22,25 @@
 #define SIG_WORDS   128
 #endif
 
+// Trap record written by _trap_entry (word offsets into trap_rec)
+#define TR_CAUSE     0
+#define TR_EPC       4
+#define TR_TVAL      8
+#define TR_COUNT     12
+#define TR_PROBE     16
+#define TR_ACC       20
+#define TR_MIE       24
+#define TR_MACST     28
+#define TR_PROBE_PTR 32
+
 // Reset entry: set up the signature pointer.
 .macro TEST_BEGIN
     .section .text.init, "ax", @progbits
     .globl _start
 _start:
     la      s11, begin_signature
+    la      t6, _trap_entry
+    csrw    mtvec, t6
 .endm
 
 // Store \reg to the next signature slot and record \exp as its expected value.
@@ -41,6 +60,51 @@ _start:
     li      t6, HALT_ADDR
     sw      zero, 0(t6)
 1:  j       1b
+
+    // ---- default trap handler ----
+    .section .text.trap, "ax", @progbits
+    .balign 4
+    .globl  _trap_entry
+_trap_entry:
+    csrw    mscratch, t5
+    LA_ABS  t5, trap_rec
+    csrr    t6, mcause
+    sw      t6, TR_CAUSE(t5)
+    csrr    t6, mepc
+    sw      t6, TR_EPC(t5)
+    csrr    t6, mtval
+    sw      t6, TR_TVAL(t5)
+    lw      t6, TR_COUNT(t5)
+    addi    t6, t6, 1
+    sw      t6, TR_COUNT(t5)
+    lw      t6, TR_PROBE_PTR(t5)    // the word the test asked to sample
+    lw      t6, 0(t6)
+    sw      t6, TR_PROBE(t5)
+    MAC_STATUS t6                   // MAC sticky overflow at trap entry (read first:
+    sw      t6, TR_MACST(t5)        //  the READ_LO below may set it itself)
+    MAC_RDLO t6                     // MAC accumulator low word at trap entry
+    sw      t6, TR_ACC(t5)
+    csrr    t6, mie
+    sw      t6, TR_MIE(t5)
+    csrr    t6, mcause
+    bltz    t6, 3f                  // interrupt: resume at mepc
+    addi    t6, t6, -1
+    bnez    t6, 2f
+    csrw    mepc, ra                // instruction access fault: back to the caller
+    j       3f
+2:  csrr    t6, mepc                // exception: skip the instruction
+    addi    t6, t6, 4
+    csrw    mepc, t6
+3:  csrr    t5, mscratch
+    mret
+
+    .section .data.trap, "aw", @progbits
+    .balign 4
+    .globl  trap_rec
+trap_rec:
+    .fill   8, 4, 0                 // cause, epc, tval, count, probe, acc_lo, mie, mac status
+    .word   trap_rec                // TR_PROBE_PTR: defaults to trap_rec itself
+
     .section .data.signature, "aw", @progbits
     .balign 16
     .globl  begin_signature
@@ -57,7 +121,9 @@ end_signature:
     .set    expected_dbus_errors, \count
 .endm
 
-// Declare intentional illegal-instruction / misaligned-access errors (default 0).
+// Declare intentional traps (default 0): illegal instruction (mcause 2),
+// misaligned load/store (4/6), and every other cause (ECALL, EBREAK,
+// instruction address misaligned / access fault, interrupts).
 .macro EXPECT_ILLEGAL count
     .globl  expected_illegal_errors
     .set    expected_illegal_errors, \count
@@ -65,6 +131,31 @@ end_signature:
 .macro EXPECT_MISALIGNED count
     .globl  expected_misaligned_errors
     .set    expected_misaligned_errors, \count
+.endm
+.macro EXPECT_OTHER_TRAPS count
+    .globl  expected_other_traps
+    .set    expected_other_traps, \count
+.endm
+
+// Load one trap_rec field into \reg.
+.macro TRAP_FIELD reg, off
+    LA_ABS  \reg, trap_rec
+    lw      \reg, \off(\reg)
+.endm
+// CHECK the last trap's mcause, mepc and mtval (uses t6).
+.macro CHECK_TRAP cause, epc, tval
+    TRAP_FIELD t6, TR_CAUSE
+    CHECK   t6, \cause
+    TRAP_FIELD t6, TR_EPC
+    CHECK   t6, \epc
+    TRAP_FIELD t6, TR_TVAL
+    CHECK   t6, \tval
+.endm
+// Make the handler sample the word at \sym (into TR_PROBE) at trap entry.
+.macro SET_PROBE sym, tmp
+    LA_ABS  \tmp, \sym
+    LA_ABS  t6, trap_rec
+    sw      \tmp, TR_PROBE_PTR(t6)
 .endm
 
 // Hold every TCM store in EX for `cycles` cycles in this test (harness hook,

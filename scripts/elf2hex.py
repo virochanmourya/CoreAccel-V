@@ -135,7 +135,8 @@ def main():
         args.append("HOLD_EX_STORES=%d" % symbols["test_hold_ex_stores"])
     for sym, key in (("expected_dbus_errors", "DBUS_ERRORS"),
                      ("expected_illegal_errors", "ILLEGAL_ERRORS"),
-                     ("expected_misaligned_errors", "MISALIGNED_ERRORS")):
+                     ("expected_misaligned_errors", "MISALIGNED_ERRORS"),
+                     ("expected_other_traps", "OTHER_TRAPS")):
         if sym in symbols:
             args.append("%s=%d" % (key, symbols[sym]))
 

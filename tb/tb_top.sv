@@ -12,8 +12,9 @@
 //   +TEST=<name>       label used in the RESULT line
 //   +TRACE=<file>      register write-back log (commit_monitor)
 //   +DBUS_ERRORS=<n>   expected number of unmapped data accesses (default 0)
-//   +ILLEGAL_ERRORS=<n>    expected illegal-instruction errors (default 0)
-//   +MISALIGNED_ERRORS=<n> expected misaligned-access errors (default 0)
+//   +ILLEGAL_ERRORS=<n>    expected illegal-instruction traps (mcause 2, default 0)
+//   +MISALIGNED_ERRORS=<n> expected misaligned load/store traps (mcause 4/6, default 0)
+//   +OTHER_TRAPS=<n>       expected traps with any other cause (default 0)
 //   +HOLD_EX_STORES=<n> hold every TCM store in EX for n cycles (forces the EX
 //                     hold) to check that a held store still writes exactly once
 //
@@ -85,6 +86,7 @@ module tb_top;
     int          dbus_expected;    // ... and how many the test declared
     int          illegal_errors = 0, illegal_expected;
     int          misal_errors   = 0, misal_expected;
+    int          other_traps    = 0, other_expected;
 
     function automatic void sva_fail();
         sva_errors++;
@@ -106,6 +108,7 @@ module tb_top;
         if (!$value$plusargs("DBUS_ERRORS=%d", dbus_expected)) dbus_expected = 0;
         if (!$value$plusargs("ILLEGAL_ERRORS=%d", illegal_expected)) illegal_expected = 0;
         if (!$value$plusargs("MISALIGNED_ERRORS=%d", misal_expected)) misal_expected = 0;
+        if (!$value$plusargs("OTHER_TRAPS=%d", other_expected)) other_expected = 0;
         if (sig_words > MAX_SIG) begin
             $display("RESULT FAIL test=%s reason=SIG_WORDS_too_large", test_name);
             $finish;
@@ -151,13 +154,15 @@ module tb_top;
                 dbus_errors++;
                 $display("TB: data-bus error (unmapped) addr=0x%08h cycle=%0d", `PRB_DBUS_ADDR, cycles);
             end
-            if (`PRB_ILLEGAL_ERR === 1'b1) begin
-                illegal_errors++;
-                $display("TB: illegal instruction pc=0x%08h cycle=%0d", `PRB_EX_PC, cycles);
-            end
-            if (`PRB_MISALIGN_ERR === 1'b1) begin
-                misal_errors++;
-                $display("TB: misaligned access pc=0x%08h cycle=%0d", `PRB_EX_PC, cycles);
+            if (`PRB_TRAP === 1'b1) begin
+                $display("TB: trap mcause=0x%08h mepc=0x%08h mtval=0x%08h cycle=%0d",
+                         {`PRB_TRAP_CAUSE[4], 27'b0, `PRB_TRAP_CAUSE[3:0]},
+                         `PRB_TRAP_PC, `PRB_TRAP_TVAL, cycles);
+                case (`PRB_TRAP_CAUSE)
+                    5'd2:      illegal_errors++;
+                    5'd4, 5'd6: misal_errors++;
+                    default:   other_traps++;
+                endcase
             end
             if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
                 halted = 1'b1;
@@ -194,10 +199,10 @@ module tb_top;
         if (sig_words == 0)
             $display("RESULT FAIL test=%s cycles=%0d reason=no_signature", test_name, cycles);
         else if (dbus_errors != dbus_expected || illegal_errors != illegal_expected ||
-                 misal_errors != misal_expected)
-            $display("RESULT FAIL test=%s cycles=%0d errors(dbus/illegal/misaligned)=%0d/%0d/%0d expected=%0d/%0d/%0d mismatches=%0d/%0d",
-                     test_name, cycles, dbus_errors, illegal_errors, misal_errors,
-                     dbus_expected, illegal_expected, misal_expected, mismatches, sig_words);
+                 misal_errors != misal_expected || other_traps != other_expected)
+            $display("RESULT FAIL test=%s cycles=%0d errors(dbus/illegal/misaligned/other)=%0d/%0d/%0d/%0d expected=%0d/%0d/%0d/%0d mismatches=%0d/%0d",
+                     test_name, cycles, dbus_errors, illegal_errors, misal_errors, other_traps,
+                     dbus_expected, illegal_expected, misal_expected, other_expected, mismatches, sig_words);
         else if (sva_errors != 0)
             $display("RESULT FAIL test=%s cycles=%0d sva_errors=%0d mismatches=%0d/%0d",
                      test_name, cycles, sva_errors, mismatches, sig_words);

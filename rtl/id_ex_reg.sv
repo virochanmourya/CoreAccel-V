@@ -80,9 +80,10 @@ module id_ex_reg (
     input  logic [2:0]  funct3_in,
     output logic [2:0]  funct3_out,
 
-    // Illegal-instruction flag (reaches EX only if not squashed)
-    input  logic        illegal_in,
-    output logic        illegal_out,
+    // Exception raised in IF/ID (fetch fault, illegal, ECALL, EBREAK; later
+    // an interrupt tag). Reaches EX only if not squashed; cause in cause_*.
+    input  logic        exc_in,
+    output logic        exc_out,
 
     // Operand refresh while held: the EX-stage forwarding mux outputs.
     // When EX is held, its producers keep draining out of MEM/WB, so the
@@ -98,11 +99,19 @@ module id_ex_reg (
     output logic        is_csr_out,
     // Zicsr: the CSR instruction writes its CSR
     input  logic        csr_we_in,
-    output logic        csr_we_out
+    output logic        csr_we_out,
+    // Exception cause {interrupt, code[3:0]} (valid with exc)
+    input  logic [4:0]  cause_in,
+    output logic [4:0]  cause_out,
+    // MRET (returns in MEM)
+    input  logic        is_mret_in,
+    output logic        is_mret_out
 );
 
     always_ff @(posedge clk) begin
         if (reset || flush) begin
+            is_mret_out <= 1'b0;
+            cause_out <= '0;
             csr_we_out <= 1'b0;
             is_csr_out <= 1'b0;
             valid_out <= 1'b0;
@@ -130,9 +139,11 @@ module id_ex_reg (
             rs2_addr_out       <= 5'd0;
             rd_addr_out        <= 5'd0;
             funct3_out         <= 3'd0;
-            illegal_out        <= 1'b0;
+            exc_out            <= 1'b0;
         end
         else if (!stall) begin
+            is_mret_out <= is_mret_in;
+            cause_out <= cause_in;
             csr_we_out <= csr_we_in;
             is_csr_out <= is_csr_in;
             valid_out <= valid_in;
@@ -160,7 +171,7 @@ module id_ex_reg (
             rs2_addr_out       <= rs2_addr_in;
             rd_addr_out        <= rd_addr_in;
             funct3_out         <= funct3_in;
-            illegal_out        <= illegal_in;
+            exc_out            <= exc_in;
         end
         else begin  // held: keep the instruction, refresh its operands
             rs1_data_out       <= rs1_fwd_in;

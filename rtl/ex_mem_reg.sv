@@ -43,11 +43,31 @@ module ex_mem_reg (
     output logic [2:0]  funct3_out,
     // Valid instruction (0 for a bubble)
     input  logic        valid_in,
-    output logic        valid_out
+    output logic        valid_out,
+    // Exception: this instruction traps in MEM
+    input  logic        exc_in,
+    output logic        exc_out,
+    // Trap cause {interrupt, code[3:0]}
+    input  logic [4:0]  cause_in,
+    output logic [4:0]  cause_out,
+    // Instruction PC (mepc on a trap)
+    input  logic [31:0] pc_in,
+    output logic [31:0] pc_out,
+    // Trap value (mtval)
+    input  logic [31:0] tval_in,
+    output logic [31:0] tval_out,
+    // MRET: return from trap in MEM
+    input  logic        is_mret_in,
+    output logic        is_mret_out
 );
 
     always_ff @(posedge clk) begin
         if (reset || flush) begin
+            is_mret_out <= 1'b0;
+            tval_out <= '0;
+            pc_out <= '0;
+            cause_out <= '0;
+            exc_out <= 1'b0;
             valid_out <= 1'b0;
             reg_write_out   <= 1'b0;
             mem_to_reg_out  <= 1'b0;
@@ -59,6 +79,11 @@ module ex_mem_reg (
             funct3_out      <= 3'd0;
         end
         else begin
+            is_mret_out <= is_mret_in;
+            tval_out <= tval_in;
+            pc_out <= pc_in;
+            cause_out <= cause_in;
+            exc_out <= exc_in;
             valid_out <= valid_in;
             reg_write_out   <= reg_write_in;
             mem_to_reg_out  <= mem_to_reg_in;

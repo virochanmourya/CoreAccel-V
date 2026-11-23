@@ -5,7 +5,8 @@
 // of a taken branch is squashed and must not be counted.
 #include "test.h"
 
-    EXPECT_ILLEGAL 15
+    EXPECT_ILLEGAL 13
+    EXPECT_OTHER_TRAPS 2            // [2] ECALL, [3] EBREAK trap with their own causes
 
     .data
     .balign 4
