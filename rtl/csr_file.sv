@@ -13,7 +13,7 @@
 //     mstatus   MIE[3], MPIE[7] RW; MPP[12:11] = 11 (read-only); rest 0
 //     misa      0x4080_1100 (RV32 I M X), writes ignored
 //     mie       MTIE[7], MEIE[11] RW; rest 0
-//     mip       MTIP[7], MEIP[11] read-only (0 until the interrupt sources exist)
+//     mip       MTIP[7], MEIP[11] read-only (levels from the timer / external line)
 //     mtvec     BASE[31:2] RW, MODE = 00 (direct only)
 //     mepc      [31:2] RW, [1:0] = 0 (IALIGN = 32)
 //     mcause    [31] and [3:0] RW (WLRL: other bits read 0)
@@ -21,6 +21,7 @@
 //     mcycle(h), minstret(h)  64-bit RW counters; mcycle counts every cycle,
 //               minstret counts retired instructions (instret_inc from WB)
 //     cycle(h), instret(h)    read-only shadows (Zicntr)
+//     time(h)   read-only shadow of the memory-mapped mtime
 //     mstatush, mcountinhibit, mhpmcounter3..31(h), mhpmevent3..31,
 //     mvendorid, marchid, mimpid, mhartid, mconfigptr: read 0, writes ignored
 //   A write to a counter half replaces that half for this cycle (no
@@ -31,6 +32,10 @@
 //   stays M). mtvec/mepc are outputs for the PC redirect. The core kills a
 //   younger CSR write in EX on those cycles, so the two never collide; trap
 //   entry still has priority in this file.
+//
+//   Interrupts: irq_pending = MIE & ((MEIE & MEIP) | (MTIE & MTIP)), all
+//   registers, so the ID-stage interrupt tag is an early signal. irq_cause is
+//   the highest-priority enabled pending one (MEI 11 over MTI 7).
 // ============================================================================
 
 module csr_file
@@ -55,7 +60,13 @@ module csr_file
     input  logic [31:0] trap_tval,
     input  logic        mret_take,
     output logic [31:0] mtvec_o,
-    output logic [31:0] mepc_o
+    output logic [31:0] mepc_o,
+    // Interrupts
+    input  logic        mtip,        // timer: mtime >= mtimecmp (registered)
+    input  logic        meip,        // external line, synchronised
+    input  logic [63:0] mtime,       // for the time / timeh CSRs
+    output logic        irq_pending,
+    output logic [4:0]  irq_cause    // {1, code}
 );
 
     // ---- State ----
@@ -74,7 +85,9 @@ module csr_file
 
     assign mstatus_rd = {19'b0, 2'b11, 3'b0, mstatus_mpie, 3'b0, mstatus_mie, 3'b0};
     assign mie_rd     = {20'b0, mie_meie, 3'b0, mie_mtie, 7'b0};
-    assign mip_rd     = 32'b0;
+    assign mip_rd     = {20'b0, meip, 3'b0, mtip, 7'b0};
+    assign irq_pending = mstatus_mie & ((mie_meie & meip) | (mie_mtie & mtip));
+    assign irq_cause   = (mie_meie & meip) ? 5'b1_1011 : 5'b1_0111;
     assign mtvec_o    = {mtvec_base, 2'b00};
     assign mepc_o     = {mepc_q, 2'b00};
 
@@ -94,6 +107,8 @@ module csr_file
             CSR_MCYCLEH,  CSR_CYCLEH:     rdata = mcycle_q[63:32];
             CSR_MINSTRET, CSR_INSTRET:    rdata = minstret_q[31:0];
             CSR_MINSTRETH, CSR_INSTRETH:  rdata = minstret_q[63:32];
+            CSR_TIME:                     rdata = mtime[31:0];
+            CSR_TIMEH:                    rdata = mtime[63:32];
             default:                      rdata = 32'b0;   // read-only-zero CSRs
         endcase
     end

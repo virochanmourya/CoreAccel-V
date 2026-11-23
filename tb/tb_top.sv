@@ -18,7 +18,10 @@
 //   +HOLD_EX_STORES=<n> hold every TCM store in EX for n cycles (forces the EX
 //                     hold) to check that a held store still writes exactly once
 //
-// The test ends with a store to HALT_ADDR. Output ends with exactly one line:
+// Simulation control word at HALT_ADDR (the RTL ignores writes there):
+//   store 1 -> raise the external interrupt line, store 2 -> drop it,
+//   any other value -> halt and check (TEST_END stores 0).
+// Output ends with exactly one line:
 //   RESULT PASS|FAIL|TIMEOUT test=<name> cycles=<n> ...
 // ============================================================================
 `timescale 1ns/1ps
@@ -87,6 +90,10 @@ module tb_top;
     int          illegal_errors = 0, illegal_expected;
     int          misal_errors   = 0, misal_expected;
     int          other_traps    = 0, other_expected;
+
+    // External interrupt line driven by the test through the control word
+    logic ext_irq_tb = 1'b0;
+    initial force `PRB_EXT_IRQ = ext_irq_tb;
 
     function automatic void sva_fail();
         sva_errors++;
@@ -164,7 +171,11 @@ module tb_top;
                     default:   other_traps++;
                 endcase
             end
-            if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
+            if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA == 32'd1) begin
+                ext_irq_tb <= 1'b1;
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA == 32'd2) begin
+                ext_irq_tb <= 1'b0;
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
                 halted = 1'b1;
                 fork check_and_finish(); join_none
             end else if (cycles >= timeout) begin

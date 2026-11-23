@@ -17,6 +17,13 @@
 
 #define HALT_ADDR   0xC0000FFC
 #define SIG_CANARY  0xDEADBEEF
+
+// Machine timer (mtime lo/hi at +0/+4, mtimecmp lo/hi at +8/+C)
+#define MTIMER_BASE 0xC0000100
+// Simulation control words stored to HALT_ADDR (testbench only; the RTL
+// ignores writes there): raise / drop the external interrupt line.
+#define SIM_EXT_IRQ_ON  1
+#define SIM_EXT_IRQ_OFF 2
 // Signature slots; a test with more checks defines SIG_WORDS before the include.
 #ifndef SIG_WORDS
 #define SIG_WORDS   128
@@ -87,7 +94,7 @@ _trap_entry:
     csrr    t6, mie
     sw      t6, TR_MIE(t5)
     csrr    t6, mcause
-    bltz    t6, 3f                  // interrupt: resume at mepc
+    bltz    t6, 4f                  // interrupt: silence it, resume at mepc
     addi    t6, t6, -1
     bnez    t6, 2f
     csrw    mepc, ra                // instruction access fault: back to the caller
@@ -97,6 +104,14 @@ _trap_entry:
     csrw    mepc, t6
 3:  csrr    t5, mscratch
     mret
+4:  li      t5, MTIMER_BASE         // timer: mtimecmp = all ones (never)
+    li      t6, -1
+    sw      t6, 12(t5)
+    sw      t6, 8(t5)
+    li      t5, HALT_ADDR           // external: drop the simulated line
+    li      t6, SIM_EXT_IRQ_OFF
+    sw      t6, 0(t5)
+    j       3b
 
     .section .data.trap, "aw", @progbits
     .balign 4

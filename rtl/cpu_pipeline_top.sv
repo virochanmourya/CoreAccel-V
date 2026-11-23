@@ -103,6 +103,10 @@ module cpu_pipeline_top #(
     logic        is_periph_region; // MEM decode: 0xC000_0000..0xC000_0FFF
     logic        is_periph_mapped; // A defined register inside the peripheral page
     logic        is_tohost; // 0xC000_0FFC: reserved simulation halt (writes ignored)
+    logic        is_periph_page0; // 0xC000_0000..0xC000_000F: GPIO / UART / 7-seg
+    logic        is_timer;  // 0xC000_0100..0xC000_010F: mtime / mtimecmp
+    logic        timer_we;
+    logic [31:0] timer_rdata;
     logic        mem_access; // Load or store in MEM
     // ---- Unmapped data access (MEM): read-as-zero / write-ignored ----
     // Not a trap (platform choice: holes are RAZ/WI); the testbench counts it.
@@ -181,6 +185,19 @@ module cpu_pipeline_top #(
     logic        ex_kill;                   // the EX instruction is younger than a trap/MRET: commit nothing
     logic [31:0] csr_mtvec, csr_mepc;
 
+    // ---- Interrupts ----
+    // Taken by tagging the instruction in ID (it becomes a bubble that traps
+    // in MEM with mepc = its PC), so an interrupt never cuts into an op held
+    // in EX: the tagged instruction simply waits in ID behind it.
+    logic        ext_irq;                   // external interrupt request (level)
+    (* ASYNC_REG = "TRUE" *) logic [1:0] ext_irq_sync;
+    logic        meip;                      // synchronised external line
+    logic        mtip;                      // timer compare (registered in mtimer)
+    logic [63:0] mtime;
+    logic        irq_pending;               // MIE & enabled & pending (registers only)
+    logic [4:0]  irq_cause;
+    logic        irq_tag;                   // the ID instruction takes the interrupt
+
     // ---- Valid bits (0 = bubble), one per pipeline register ----
     logic        if_id_valid, id_ex_valid, ex_mem_valid, mem_wb_valid;
 
@@ -196,11 +213,8 @@ module cpu_pipeline_top #(
     // ---- EX/MEM Register Outputs ----
     logic        ex_mem_reg_write, ex_mem_mem_to_reg, ex_mem_mem_read, ex_mem_mem_write;
     logic [31:0] ex_mem_alu_result;
-    // Store data in MEM feeds the peripherals; today's registers use <= 16 bits.
-    // Kept 32-bit for future 32-bit peripheral registers.
-    /* verilator lint_off UNUSEDSIGNAL */
+    // Store data in MEM feeds the peripherals (the timer uses all 32 bits).
     logic [31:0] ex_mem_rs2_data;
-    /* verilator lint_on UNUSEDSIGNAL */
     logic [4:0]  ex_mem_rd_addr;
 
     // ---- MEM Stage (read data handled by address decoder below) ----
@@ -303,7 +317,7 @@ module cpu_pipeline_top #(
         .imm12          (if_id_instruction[31:20]),
         .rs1_field      (id_rs1),
         .rd_field       (id_rd),
-        .squash         (if_id_fetch_fault),
+        .squash         (if_id_fetch_fault | irq_tag),
         .reg_write      (id_reg_write),
         .alu_src        (id_alu_src),
         .mem_read       (id_mem_read),
@@ -355,11 +369,19 @@ module cpu_pipeline_top #(
     && (mem_wb_rd_addr == id_rs2))
     ? wb_data : rf_read_data2;
 
-    // ---- ID-stage exceptions (priority: fetch fault, illegal, EBREAK, ECALL) ----
-    // The control unit already turned the instruction into a bubble.
-    assign id_exc = if_id_fetch_fault | id_illegal | id_is_ecall | id_is_ebreak;
+    // ---- Interrupt tag ----
+    // A valid ID instruction takes a pending, enabled interrupt. Not while a
+    // CSR instruction is in EX: it may be changing mstatus/mie this very
+    // cycle (its write lands at the end of the cycle), so the decision waits
+    // one cycle for the new value.
+    assign irq_tag = if_id_valid & irq_pending & ~is_csr_ex;
+
+    // ---- ID-stage exceptions (priority: interrupt, fetch fault, illegal,
+    //      EBREAK, ECALL). The control unit already turned it into a bubble.
+    assign id_exc = irq_tag | if_id_fetch_fault | id_illegal | id_is_ecall | id_is_ebreak;
     always_comb begin
-        if (if_id_fetch_fault) id_cause = 5'd1;    // instruction access fault
+        if (irq_tag)                id_cause = irq_cause;  // {1, 7 or 11}
+        else if (if_id_fetch_fault) id_cause = 5'd1;    // instruction access fault
         else if (id_illegal)   id_cause = 5'd2;    // illegal instruction
         else if (id_is_ebreak) id_cause = 5'd3;    // breakpoint
         else                   id_cause = 5'd11;   // ECALL from M-mode
@@ -634,7 +656,12 @@ module cpu_pipeline_top #(
         .trap_tval   (ex_mem_tval),
         .mret_take   (mem_mret),
         .mtvec_o     (csr_mtvec),
-        .mepc_o      (csr_mepc)
+        .mepc_o      (csr_mepc),
+        .mtip        (mtip),
+        .meip        (meip),
+        .mtime       (mtime),
+        .irq_pending (irq_pending),
+        .irq_cause   (irq_cause)
     );
 
     // ---- MAC read select (result path into the EX result mux only) ----
@@ -768,6 +795,8 @@ module cpu_pipeline_top #(
     //   0xC000_0004                UART TX data / busy
     //   0xC000_0008                7-segment data
     //   0xC000_000C                GPIO output latch (read-only debug)
+    //   0xC000_0100 / 0x104        mtime lo / hi
+    //   0xC000_0108 / 0x10C        mtimecmp lo / hi
     //   0xC000_0FFC                reserved: simulation halt ("tohost")
     //   anything else              unmapped -> dbus_error (reads return 0)
     // This decode is exact and runs on the registered EX/MEM address. The TCM
@@ -775,15 +804,18 @@ module cpu_pipeline_top #(
     assign is_tcm_access    = (ex_mem_alu_result[31:12] == 20'h80000);
     assign is_periph_region = (ex_mem_alu_result[31:12] == 20'hC0000);
     assign is_tohost        = is_periph_region & (ex_mem_alu_result[11:2] == 10'h3FF);
-    assign is_periph_mapped = (is_periph_region & (ex_mem_alu_result[11:4] == 8'h00)) | is_tohost;
+    assign is_periph_page0  = is_periph_region & (ex_mem_alu_result[11:4] == 8'h00);
+    assign is_timer         = is_periph_region & (ex_mem_alu_result[11:4] == 8'h10);
+    assign is_periph_mapped = is_periph_page0 | is_timer | is_tohost;
 
     assign mem_access = ex_mem_mem_read | ex_mem_mem_write;
     assign dbus_error = mem_access & ~is_tcm_access & ~is_periph_mapped;
 
     // ---- Peripheral Sub-Decode (0xC000_000x page) ----
-    assign is_i2c_access  = is_periph_mapped & ~is_tohost & (ex_mem_alu_result[3:2] == 2'b00);
-    assign is_uart_access = is_periph_mapped & ~is_tohost & (ex_mem_alu_result[3:2] == 2'b01);
-    assign is_seg_access  = is_periph_mapped & ~is_tohost & (ex_mem_alu_result[3:2] == 2'b10);
+    assign is_i2c_access  = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b00);
+    assign is_uart_access = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b01);
+    assign is_seg_access  = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b10);
+    assign timer_we       = ex_mem_mem_write & is_timer;
     assign gpio_we        = ex_mem_mem_write &  is_i2c_access;
     assign uart_we        = ex_mem_mem_write &  is_uart_access;
     assign seg_we         = ex_mem_mem_write &  is_seg_access;
@@ -833,6 +865,29 @@ module cpu_pipeline_top #(
     end
     assign scl_pin_in = i2c_sync2[0];
     assign sda_pin_in = i2c_sync2[1];
+
+    // ========================================================================
+    //  Machine timer (0xC000_0100..0x10F) and external interrupt line
+    // ========================================================================
+    mtimer u_mtimer (
+        .clk   (clk),
+        .reset (reset),
+        .we    (timer_we),
+        .sel   (ex_mem_alu_result[3:2]),
+        .wdata (ex_mem_rs2_data),
+        .rdata (timer_rdata),
+        .mtime (mtime),
+        .mtip  (mtip)
+    );
+
+    // External interrupt: one level-sensitive input, tied off here until the
+    // DMA engine drives it. 2-FF synchroniser (the source may be asynchronous).
+    assign ext_irq = 1'b0;
+    always_ff @(posedge clk) begin
+        if (reset) ext_irq_sync <= 2'b00;
+        else       ext_irq_sync <= {ext_irq_sync[0], ext_irq};
+    end
+    assign meip = ext_irq_sync[1];
 
     // ========================================================================
     //  UART TX Peripheral (0xC000_0004)
@@ -894,8 +949,10 @@ module cpu_pipeline_top #(
     always_comb begin
         if (is_tcm_access)
             mem_read_data_muxed = tcm_douta;
-        else if (is_periph_mapped && !is_tohost)
+        else if (is_periph_page0)
             mem_read_data_muxed = gpio_rdata;
+        else if (is_timer)
+            mem_read_data_muxed = timer_rdata;
         else
             mem_read_data_muxed = 32'b0;
     end

@@ -29,6 +29,8 @@ package csr_pkg;
     localparam logic [11:0] CSR_INSTRET       = 12'hC02;
     localparam logic [11:0] CSR_CYCLEH        = 12'hC80;
     localparam logic [11:0] CSR_INSTRETH      = 12'hC82;
+    localparam logic [11:0] CSR_TIME          = 12'hC01;   // mtime shadow (Zicntr)
+    localparam logic [11:0] CSR_TIMEH         = 12'hC81;
     localparam logic [11:0] CSR_MVENDORID     = 12'hF11;
     localparam logic [11:0] CSR_MARCHID       = 12'hF12;
     localparam logic [11:0] CSR_MIMPID        = 12'hF13;
@@ -51,6 +53,7 @@ package csr_pkg;
             CSR_MCOUNTINHIBIT, CSR_MSCRATCH, CSR_MEPC, CSR_MCAUSE, CSR_MTVAL,
             CSR_MIP, CSR_MCYCLE, CSR_MINSTRET, CSR_MCYCLEH, CSR_MINSTRETH,
             CSR_CYCLE, CSR_INSTRET, CSR_CYCLEH, CSR_INSTRETH,
+            CSR_TIME, CSR_TIMEH,
             CSR_MVENDORID, CSR_MARCHID, CSR_MIMPID, CSR_MHARTID,
             CSR_MCONFIGPTR:
                 return 1'b1;

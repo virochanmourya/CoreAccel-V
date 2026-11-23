@@ -25,6 +25,9 @@
 `define PRB_TRAP_PC      dut.ex_mem_pc
 `define PRB_TRAP_TVAL    dut.ex_mem_tval
 
+// External interrupt request (tied off in the RTL; the harness forces it)
+`define PRB_EXT_IRQ      dut.ext_irq
+
 // EX stage: a TCM store is in EX, and the EX hold signal (forced by the
 // +HOLD_EX_STORES hook to emulate a multi-cycle unit / DMA arbiter holding EX)
 `define PRB_EX_TCM_STORE (dut.id_ex_mem_write && dut.ex_is_tcm)
