@@ -2,7 +2,6 @@
 # Remove a line when its fix lands (the regression reports XPASS as a reminder).
 #
 # test              bug  description
-subword             B2   LB/LH/LBU/LHU/SB/SH execute as LW/SW
 mac_back_to_back    F1   second of two consecutive MACs is dropped
 mac_saturation      F2   64-bit accumulator readback wraps instead of saturating
 gpio_loopback       B3   I2C/GPIO pins are not connected (reads X)

@@ -71,19 +71,24 @@ module cpu_pipeline_top #(
     logic [1:0]  forward_a_sel, forward_b_sel;
 
     // ---- TCM (Tightly Coupled Memory) ----
-    logic        tcm_wea; // Port A write enable
+    logic [3:0]  tcm_wea; // Port A byte write enables
     logic [9:0]  tcm_addra; // Port A address (1024 words)
     logic [31:0] tcm_dina; // Port A write data
     logic [31:0] tcm_douta; // Port A read data
     logic        ex_is_tcm; // EX-stage decode: effective address is in TCM
     logic        ex_hold; // EX instruction does not advance this cycle
-    logic        cpu_tcm_we; // CPU port-A request: write (from EX)
+    logic [3:0]  cpu_tcm_we; // CPU port-A request: byte write enables (from EX)
+    logic [1:0]  ex_addr_lo; // Effective address [1:0] = (rs1 + imm)[1:0]
+    logic [3:0]  ex_store_be; // Store byte lanes for SB/SH/SW
+    logic [31:0] ex_store_data; // Store data replicated into its lane(s)
     logic [9:0]  cpu_tcm_addr; // CPU port-A request: word address (from EX)
-    logic [31:0] cpu_tcm_wdata; // CPU port-A request: write data (forwarded rs2)
+    logic [31:0] cpu_tcm_wdata; // CPU port-A request: write data (lane-replicated rs2)
     logic [9:0]  tcm_addrb; // Port B address (MAC weight read)
     logic [31:0] tcm_doutb; // Port B read data → MAC tcm_data
     logic        is_tcm_access; // MEM decode: 0x8000_0000..0x8000_0FFF
-    logic [31:0] mem_read_data_muxed; // Final muxed read data
+    logic [31:0] mem_read_data_muxed; // Muxed read word (TCM / peripheral / 0)
+    logic [31:0] mem_load_data; // Load result after byte/half select and extend
+    logic [2:0]  ex_mem_funct3; // Load/store width in MEM
 
     // ---- Data-bus decode / error stub ----
     logic        is_periph_region; // MEM decode: 0xC000_0000..0xC000_0FFF
@@ -378,9 +383,34 @@ module cpu_pipeline_top #(
     // in EX, where the address is computed, and gate cpu_tcm_we.
     assign ex_is_tcm     = (alu_result[31:30] == 2'b10);
     assign ex_hold       = id_ex_stall;
-    assign cpu_tcm_we    = id_ex_mem_write & ex_is_tcm & ~ex_hold;
+    assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_hold}};
     assign cpu_tcm_addr  = alu_result[11:2];
-    assign cpu_tcm_wdata = forwarded_b;
+    assign cpu_tcm_wdata = ex_store_data;
+
+    // ---- Store width: byte lanes + lane-replicated data (SB/SH/SW) ----
+    // The lane is (rs1 + imm)[1:0], which is exactly the low two bits of the
+    // effective address, without waiting for the full ALU result/op mux.
+    // Peripherals are word registers and see the replicated data, so e.g.
+    // SB to the UART sends rs2[7:0]. Misaligned SH/SW are not trapped yet:
+    // addr[0] (SH) / addr[1:0] (SW) are ignored.
+    assign ex_addr_lo = forwarded_a[1:0] + id_ex_imm[1:0];
+
+    always_comb begin
+        case (id_ex_funct3[1:0])
+            2'b00: begin    // SB
+                ex_store_be   = 4'b0001 << ex_addr_lo;
+                ex_store_data = {4{forwarded_b[7:0]}};
+            end
+            2'b01: begin    // SH
+                ex_store_be   = ex_addr_lo[1] ? 4'b1100 : 4'b0011;
+                ex_store_data = {2{forwarded_b[15:0]}};
+            end
+            default: begin  // SW
+                ex_store_be   = 4'b1111;
+                ex_store_data = forwarded_b;
+            end
+        endcase
+    end
 
     // Single requester today; a DMA arbiter would sit between cpu_tcm_* and tcm_*.
     assign tcm_wea   = cpu_tcm_we;
@@ -463,8 +493,9 @@ module cpu_pipeline_top #(
         .mem_read_in     (id_ex_mem_read),   .mem_read_out   (ex_mem_mem_read),
         .mem_write_in    (id_ex_mem_write),  .mem_write_out  (ex_mem_mem_write),
         .alu_result_in   (ex_stage_result),  .alu_result_out (ex_mem_alu_result),
-        .rs2_data_in     (forwarded_b),      .rs2_data_out   (ex_mem_rs2_data),
-        .rd_addr_in      (id_ex_rd_addr),    .rd_addr_out    (ex_mem_rd_addr)
+        .rs2_data_in     (ex_store_data),    .rs2_data_out   (ex_mem_rs2_data),
+        .rd_addr_in      (id_ex_rd_addr),    .rd_addr_out    (ex_mem_rd_addr),
+        .funct3_in       (id_ex_funct3),     .funct3_out     (ex_mem_funct3)
     );
 
     // ========================================================================
@@ -596,6 +627,24 @@ module cpu_pipeline_top #(
             mem_read_data_muxed = 32'b0;
     end
 
+    // ---- Load width: byte/half select by addr[1:0] and sign/zero extend ----
+    // Misaligned LH/LW are not trapped yet: addr[0] (LH) / addr[1:0] (LW) ignored.
+    logic [7:0]  load_byte;
+    logic [15:0] load_half;
+    assign load_byte = mem_read_data_muxed[8*ex_mem_alu_result[1:0] +: 8];
+    assign load_half = ex_mem_alu_result[1] ? mem_read_data_muxed[31:16]
+                                            : mem_read_data_muxed[15:0];
+
+    always_comb begin
+        case (ex_mem_funct3)
+            3'b000:  mem_load_data = {{24{load_byte[7]}},  load_byte};   // LB
+            3'b001:  mem_load_data = {{16{load_half[15]}}, load_half};   // LH
+            3'b100:  mem_load_data = {24'b0, load_byte};                 // LBU
+            3'b101:  mem_load_data = {16'b0, load_half};                 // LHU
+            default: mem_load_data = mem_read_data_muxed;                // LW
+        endcase
+    end
+
     // ========================================================================
     //  MEM/WB Pipeline Register
     // ========================================================================
@@ -605,7 +654,7 @@ module cpu_pipeline_top #(
         .reset           (reset),
         .reg_write_in    (ex_mem_reg_write),  .reg_write_out  (mem_wb_reg_write),
         .mem_to_reg_in   (ex_mem_mem_to_reg), .mem_to_reg_out (mem_wb_mem_to_reg),
-        .mem_data_in     (mem_read_data_muxed), .mem_data_out (mem_wb_mem_data),
+        .mem_data_in     (mem_load_data),    .mem_data_out   (mem_wb_mem_data),
         .alu_result_in   (ex_mem_alu_result),  .alu_result_out (mem_wb_alu_result),
         .rd_addr_in      (ex_mem_rd_addr),     .rd_addr_out    (mem_wb_rd_addr)
     );

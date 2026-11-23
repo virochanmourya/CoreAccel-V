@@ -9,6 +9,7 @@ src:    .word 0xf07f8001            // b0=01 b1=80 b2=7f b3=f0
 dst:    .rept 9
         .word 0x11223344
         .endr
+dst2:   .word 0x11223344, 0x11223344
 
     TEST_BEGIN
     la      a0, src
@@ -87,5 +88,37 @@ dst:    .rept 9
     CHECK   t0, 0x000000cd
     lb      t0, 10(a1)
     CHECK   t0, 0xffffffef
+
+    // ---- lane from a forwarded base, with a carry out of the low bits ----
+    la      a4, dst2
+    li      t1, 0x77
+    addi    a3, a4, 3               // base produced right before the store
+    sb      t1, -2(a3)              // (3 + -2)[1:0] = 1 -> dst2 byte 1
+    li      t1, 0x8899
+    addi    a3, a4, 6
+    sh      t1, 0(a3)               // dst2 + 6 -> word 1, upper half
+    nop
+    nop
+    lw      t0, 0(a4)
+    CHECK   t0, 0x11227744
+    lw      t0, 4(a4)
+    CHECK   t0, 0x88993344
+    addi    a3, a4, 1
+    lb      t0, 0(a3)               // forwarded base on a byte load
+    CHECK   t0, 0x00000077
+
+    // ---- peripherals are word registers: sub-word stores write the
+    //      lane-replicated value, sub-word loads select a lane ----
+    li      a2, 0xC0000008          // 7-segment data register (16 bits)
+    li      t1, 0x1234abcd
+    sh      t1, 0(a2)
+    lw      t0, 0(a2)
+    CHECK   t0, 0x0000abcd
+    li      t1, 0x5a
+    sb      t1, 1(a2)               // replicated byte -> 0x5a5a
+    lw      t0, 0(a2)
+    CHECK   t0, 0x00005a5a
+    lbu     t0, 1(a2)
+    CHECK   t0, 0x0000005a
 
     TEST_END

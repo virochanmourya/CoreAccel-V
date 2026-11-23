@@ -3,7 +3,8 @@
 // File        : tcm_ram.sv
 // Description : 4KB True Dual-Port Tightly Coupled Memory (all data + DSP weights).
 //               Infers Xilinx Block RAM (BRAM).
-//               - Port A: Sync Read/Write (CPU, address from EX), Write-First mode.
+//               - Port A: Sync Read/Write (CPU, address from EX), byte write
+//                 enables, Read-First mode.
 //               - Port B: Sync Read-Only (MAC EX stage), 1-cycle latency.
 //               Xilinx Artix-7 (1x BRAM36E1)
 // ============================================================================
@@ -16,7 +17,7 @@ module tcm_ram #(
 )(
     // Port A: CPU Read/Write (address from EX stage)
     input  logic              clka,
-    input  logic              wea,
+    input  logic [WIDTH/8-1:0] wea,     // byte write enables
     input  logic [ADDR_W-1:0] addra,
     input  logic [WIDTH-1:0]  dina,
     output logic [WIDTH-1:0]  douta,
@@ -36,14 +37,12 @@ module tcm_ram #(
         $readmemh(INIT_FILE, mem);
     end
 
-    // Port A: Write-First mode (Xilinx BRAM WRITE_FIRST template)
+    // Port A: byte-write, Read-First (Xilinx bytewrite BRAM template).
+    // douta during a store is never consumed (the store occupies MEM next).
     always @(posedge clka) begin
-        if (wea) begin
-            mem[addra] <= dina;
-            douta      <= dina;
-        end else begin
-            douta      <= mem[addra];
-        end
+        for (int i = 0; i < WIDTH/8; i++)
+            if (wea[i]) mem[addra][8*i +: 8] <= dina[8*i +: 8];
+        douta <= mem[addra];
     end
 
     // Port B: Read-Only (clean BRAM-compatible template)

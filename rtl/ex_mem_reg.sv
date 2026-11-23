@@ -8,6 +8,7 @@
 //               - MEM control: mem_read, mem_write
 //               - Data:        alu_result, rs2_data (store data for SW)
 //               - Address:     rd_addr (destination register)
+//               - funct3:      load/store width and sign (LB/LH/LW/LBU/LHU)
 // ============================================================================
 
 module ex_mem_reg (
@@ -35,7 +36,11 @@ module ex_mem_reg (
 
     // Destination register address
     input  logic [4:0]  rd_addr_in,
-    output logic [4:0]  rd_addr_out
+    output logic [4:0]  rd_addr_out,
+
+    // Load/store width
+    input  logic [2:0]  funct3_in,
+    output logic [2:0]  funct3_out
 );
 
     always_ff @(posedge clk) begin
@@ -47,6 +52,7 @@ module ex_mem_reg (
             alu_result_out  <= 32'd0;
             rs2_data_out    <= 32'd0;
             rd_addr_out     <= 5'd0;
+            funct3_out      <= 3'd0;
         end
         else begin
             reg_write_out   <= reg_write_in;
@@ -56,6 +62,7 @@ module ex_mem_reg (
             alu_result_out  <= alu_result_in;
             rs2_data_out    <= rs2_data_in;
             rd_addr_out     <= rd_addr_in;
+            funct3_out      <= funct3_in;
         end
     end
 
