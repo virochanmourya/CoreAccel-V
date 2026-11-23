@@ -1,8 +1,9 @@
 # ============================================================================
 # CoreAccel-V — firmware build, directed tests, xsim simulation, lint
 #
-#   make regress            build + run every test in tests/*.S, print summary
-#   make test T=<name>      build + run one test (tests/<name>.S)
+#   make regress            build + run every test (tests/*.S + generated), print summary
+#   make test T=<name>      build + run one test (tests/<name>.S, or generated)
+#   MEXT_SEED=<n> make ...  seed for the generated mext_random test
 #   HOLD=<n> make regress   ... with every TCM store held in EX for n cycles
 #   make tests              build all test images only
 #   make sim-build          compile + elaborate the xsim snapshot
@@ -34,7 +35,9 @@ TB_DEPS := $(TB_SV) $(wildcard $(ROOT)/tb/*.svh)
 
 TEST_DIR    := $(ROOT)/tests
 TEST_COMMON := $(TEST_DIR)/common/test.h $(TEST_DIR)/common/link.ld
-TESTS       := $(sort $(basename $(notdir $(wildcard $(TEST_DIR)/*.S))))
+# Generated tests (built from build/gen/<name>.S, see "generated tests" below)
+GEN_TESTS   := mext_random
+TESTS       := $(sort $(basename $(notdir $(wildcard $(TEST_DIR)/*.S)))) $(GEN_TESTS)
 TEST_CFLAGS := $(ARCH) -nostdlib -nostartfiles -static \
                -I$(TEST_DIR)/common -T $(TEST_DIR)/common/link.ld
 
@@ -51,6 +54,29 @@ $(BUILD)/tests/%/test.elf: $(TEST_DIR)/%.S $(TEST_COMMON)
 
 $(BUILD)/tests/%/plusargs.txt: $(BUILD)/tests/%/test.elf $(ELF2HEX)
 	$(PYTHON) $(ELF2HEX) $< $(@D)
+
+# ---------------------------------------------------------------- generated tests
+# mext_random: random RV32M vectors with expected values from the generator's
+# reference model. The seed is fixed so the regression is reproducible; pass
+# MEXT_SEED=<n> (and MEXT_OPS=<n>) to try others. The generator only rewrites
+# the .S when its content changes, so a new seed rebuilds and an unchanged
+# one does not.
+MEXT_SEED ?= 20261124
+MEXT_OPS  ?= 360
+GEN_DIR   := $(BUILD)/gen
+GEN_MEXT  := $(ROOT)/scripts/gen_mext_random.py
+
+$(GEN_DIR)/mext_random.S: $(GEN_MEXT) FORCE
+	@mkdir -p $(@D)
+	@$(PYTHON) $(GEN_MEXT) --seed $(MEXT_SEED) --ops $(MEXT_OPS) --out $@
+
+$(BUILD)/tests/mext_random/test.elf: $(GEN_DIR)/mext_random.S $(TEST_COMMON)
+	@mkdir -p $(@D)
+	$(CC) $(TEST_CFLAGS) -o $@ $<
+	$(OBJDUMP) -d $@ > $(@D)/test.dis
+
+.PHONY: FORCE
+FORCE:
 
 # ---------------------------------------------------------------- xsim
 SIM_DIR   := $(BUILD)/sim

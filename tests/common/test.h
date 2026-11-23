@@ -11,7 +11,10 @@
 
 #define HALT_ADDR   0xC0000FFC
 #define SIG_CANARY  0xDEADBEEF
+// Signature slots; a test with more checks defines SIG_WORDS before the include.
+#ifndef SIG_WORDS
 #define SIG_WORDS   128
+#endif
 
 // Reset entry: set up the signature pointer.
 .macro TEST_BEGIN
