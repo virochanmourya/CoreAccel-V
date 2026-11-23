@@ -75,10 +75,11 @@ module cpu_pipeline_top #(
     logic [9:0]  tcm_addra; // Port A address (1024 words)
     logic [31:0] tcm_dina; // Port A write data
     logic [31:0] tcm_douta; // Port A read data
-    logic        ex_is_tcm; // EX-stage decode: effective address is in TCM
+    logic [31:0] ex_eff_addr; // AGU: load/store effective address rs1 + imm
+    logic        ex_is_tcm; // EX-stage decode: effective address is in TCM (exact)
     logic        ex_hold; // EX instruction does not advance this cycle
     logic [3:0]  cpu_tcm_we; // CPU port-A request: byte write enables (from EX)
-    logic [1:0]  ex_addr_lo; // Effective address [1:0] = (rs1 + imm)[1:0]
+    logic [1:0]  ex_addr_lo; // Effective address [1:0]
     logic [3:0]  ex_store_be; // Store byte lanes for SB/SH/SW
     logic [31:0] ex_store_data; // Store data replicated into its lane(s)
     logic [9:0]  cpu_tcm_addr; // CPU port-A request: word address (from EX)
@@ -389,19 +390,26 @@ module cpu_pipeline_top #(
     // in EX and squashes it while it is still in ID.
     // Future traps: memory faults (misaligned, unmapped) must be detected here
     // in EX, where the address is computed, and gate cpu_tcm_we.
-    assign ex_is_tcm     = (alu_result[31:30] == 2'b10);
+    //
+    // AGU: a dedicated adder computes the load/store effective address from
+    // the forwarded base and the immediate, so the TCM address, byte lanes and
+    // the exact range check do not wait for the ALU's operand and result muxes.
+    // For loads/stores it equals alu_result (checked by an SVA in tb/core_sva.sv).
+    // The write enable is gated with the exact TCM range, so a store outside
+    // 0x8000_0000-0x8000_0FFF writes nothing (it raises dbus_error in MEM).
+    assign ex_eff_addr   = forwarded_a + id_ex_imm;
+    assign ex_is_tcm     = (ex_eff_addr[31:12] == 20'h80000);
     assign ex_hold       = id_ex_stall;
     assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_hold}};
-    assign cpu_tcm_addr  = alu_result[11:2];
+    assign cpu_tcm_addr  = ex_eff_addr[11:2];
     assign cpu_tcm_wdata = ex_store_data;
 
     // ---- Store width: byte lanes + lane-replicated data (SB/SH/SW) ----
-    // The lane is (rs1 + imm)[1:0], which is exactly the low two bits of the
-    // effective address, without waiting for the full ALU result/op mux.
+    // The lane is the low two bits of the AGU effective address.
     // Peripherals are word registers and see the replicated data, so e.g.
     // SB to the UART sends rs2[7:0]. Misaligned SH/SW are not trapped yet:
     // addr[0] (SH) / addr[1:0] (SW) are ignored.
-    assign ex_addr_lo = forwarded_a[1:0] + id_ex_imm[1:0];
+    assign ex_addr_lo = ex_eff_addr[1:0];
 
     always_comb begin
         case (id_ex_funct3[1:0])
@@ -517,12 +525,8 @@ module cpu_pipeline_top #(
     //   0xC000_000C                GPIO output latch (read-only debug)
     //   0xC000_0FFC                reserved: simulation halt ("tohost")
     //   anything else              unmapped -> dbus_error (reads return 0)
-    // This decode is exact and runs on the registered EX/MEM address.
-    // The TCM *write* enable is decoded in EX on addr[31:30] only, to keep
-    // logic off the forwarding -> ALU -> port-A path. A store to
-    // 0x8000_1000-0xBFFF_FFFF therefore also writes an aliased TCM word; it is
-    // still flagged by dbus_error. The EX-stage fault check planned for traps
-    // will close this.
+    // This decode is exact and runs on the registered EX/MEM address. The TCM
+    // write enable uses the same exact range, decoded in EX from the AGU.
     assign is_tcm_access    = (ex_mem_alu_result[31:12] == 20'h80000);
     assign is_periph_region = (ex_mem_alu_result[31:12] == 20'hC0000);
     assign is_tohost        = is_periph_region & (ex_mem_alu_result[11:2] == 10'h3FF);

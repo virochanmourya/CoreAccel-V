@@ -5,4 +5,3 @@
 mac_saturation      F2   64-bit accumulator readback wraps instead of saturating
 gpio_loopback       B3   I2C/GPIO pins are not connected (reads X)
 illegal             F5   unsupported encodings (MUL) write registers
-tcm_alias_store     A1   store past TCM end (0x8000_1000) also writes aliased TCM word (coarse EX decode)

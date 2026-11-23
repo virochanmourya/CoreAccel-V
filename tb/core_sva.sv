@@ -14,11 +14,16 @@ module core_sva (
     // The same store one cycle later, in MEM
     input logic        ex_mem_mem_write,
     input logic [31:0] ex_mem_alu_result,
-    input logic [31:0] ex_mem_rs2_data
+    input logic [31:0] ex_mem_rs2_data,
+    // EX-stage AGU vs ALU
+    input logic        id_ex_mem_read,
+    input logic        id_ex_mem_write,
+    input logic [31:0] ex_eff_addr,
+    input logic [31:0] alu_result
 );
     logic mem_tcm_store;
-    // Same region rule as the EX-stage TCM write enable (addr[31:30] == 2'b10).
-    assign mem_tcm_store = ex_mem_mem_write & (ex_mem_alu_result[31:30] == 2'b10);
+    // Same exact range as the EX-stage TCM write enable (0x8000_0000-0x8000_0FFF).
+    assign mem_tcm_store = ex_mem_mem_write & (ex_mem_alu_result[31:12] == 20'h80000);
 
     // ---- One write per store -------------------------------------------
     // A store spends exactly one cycle in MEM. So "every TCM write is followed
@@ -45,6 +50,18 @@ module core_sva (
                  $sampled(ex_mem_alu_result));
         tb_top.sva_fail();
     end
+
+    // ---- AGU == ALU for every load/store ------------------------------------
+    // The TCM port and its range check use the dedicated AGU adder; MEM-stage
+    // decode and the EX/MEM address use the ALU result. They must agree.
+    a_agu_matches_alu: assert property (
+        @(posedge clk) disable iff (reset)
+        (id_ex_mem_read || id_ex_mem_write) |-> (ex_eff_addr === alu_result)
+    ) else begin
+        $display("SVA FAIL a_agu_matches_alu t=%0t agu=0x%08h alu=0x%08h", $time,
+                 $sampled(ex_eff_addr), $sampled(alu_result));
+        tb_top.sva_fail();
+    end
 endmodule
 
 bind cpu_pipeline_top core_sva u_core_sva (
@@ -55,5 +72,9 @@ bind cpu_pipeline_top core_sva u_core_sva (
     .tcm_dina          (tcm_dina),
     .ex_mem_mem_write  (ex_mem_mem_write),
     .ex_mem_alu_result (ex_mem_alu_result),
-    .ex_mem_rs2_data   (ex_mem_rs2_data)
+    .ex_mem_rs2_data   (ex_mem_rs2_data),
+    .id_ex_mem_read    (id_ex_mem_read),
+    .id_ex_mem_write   (id_ex_mem_write),
+    .ex_eff_addr       (ex_eff_addr),
+    .alu_result        (alu_result)
 );
