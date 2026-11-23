@@ -5,7 +5,6 @@ rtl/control_unit_pipe.sv
 rtl/forwarding_unit.sv
 rtl/hazard_detection_unit.sv
 rtl/register_file.sv
-rtl/data_memory.sv
 rtl/tcm_ram.sv
 rtl/instruction_memory_pipe.sv
 rtl/pc_pipe.sv

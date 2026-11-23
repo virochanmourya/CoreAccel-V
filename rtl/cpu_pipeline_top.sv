@@ -4,7 +4,10 @@
 // Description : 5-Stage Pipelined RV32I + DSP - Full ISA
 // ============================================================================
 
-module cpu_pipeline_top (
+module cpu_pipeline_top #(
+    parameter IMEM_INIT = "imem.hex",   // $readmemh image for IMEM (.text)
+    parameter TCM_INIT  = "tcm.hex"     // $readmemh image for TCM (.rodata/.data)
+)(
     input  logic       clk,
     input  logic       reset,
     
@@ -79,16 +82,19 @@ module cpu_pipeline_top (
     logic [31:0] cpu_tcm_wdata; // CPU port-A request: write data (forwarded rs2)
     logic [9:0]  tcm_addrb; // Port B address (MAC weight read)
     logic [31:0] tcm_doutb; // Port B read data → MAC tcm_data
-    logic        is_tcm_access; // Address decoder: 1 = TCM region
-    logic        dmem_mem_read; // Gated read for data_memory
-    logic        dmem_mem_write; // Gated write for data_memory
-    logic [31:0] dmem_read_data; // data_memory output
+    logic        is_tcm_access; // MEM decode: 0x8000_0000..0x8000_0FFF
     logic [31:0] mem_read_data_muxed; // Final muxed read data
 
+    // ---- Data-bus decode / error stub ----
+    logic        is_periph_region; // MEM decode: 0xC000_0000..0xC000_0FFF
+    logic        is_periph_mapped; // A defined register inside the peripheral page
+    logic        is_tohost; // 0xC000_0FFC: reserved simulation halt (writes ignored)
+    logic        mem_access; // Load or store in MEM
+    logic        dbus_error; // Load/store to an unmapped address (stub; trap later)
+
     // ---- I2C GPIO MMIO (0xC000_0000) ----
-    logic        is_gpio_access; // Address decoder: 1 = peripheral region (0xCxxx)
-    logic        is_i2c_access; // Sub-decode: addr[2]=0 → I2C (0xC0000000)
-    logic        is_uart_access; // Sub-decode: addr[2]=1 → UART (0xC0000004)
+    logic        is_i2c_access; // GPIO register 0xC0000000
+    logic        is_uart_access; // UART register 0xC0000004
     logic        gpio_we; // I2C GPIO register write enable
     logic [1:0]  gpio_out_reg; // {SDA, SCL} output latch
     logic [31:0] gpio_rdata; // Peripheral read-back data to CPU
@@ -101,7 +107,7 @@ module cpu_pipeline_top (
     logic        uart_tx_busy; // HIGH while byte is in transit
 
     // ---- 7-Segment Display MMIO (0xC000_0008) ----
-    logic        is_seg_access; // Sub-decode: addr[3:2]=10 → 7-seg
+    logic        is_seg_access; // 7-seg register 0xC0000008
     logic        seg_we; // 7-seg register write enable
     logic [15:0] seg_display_data; // Latched 16-bit display value (4 BCD digits)
 
@@ -165,7 +171,7 @@ module cpu_pipeline_top (
         .pc_out    (pc_current)
     );
 
-    instruction_memory_pipe u_imem (
+    instruction_memory_pipe #(.INIT_FILE(IMEM_INIT)) u_imem (
         .clk         (clk),
         .addr        (pc_current),
         .instruction (if_instruction)
@@ -464,34 +470,38 @@ module cpu_pipeline_top (
     // ========================================================================
     //  MEM STAGE — Address Decoder & Memory Subsystems
     // ========================================================================
-    assign is_tcm_access  = (ex_mem_alu_result[31:30] == 2'b10);
-    assign is_gpio_access = (ex_mem_alu_result[31:30] == 2'b11);
+    // Data-side memory map (Harvard; IMEM is not reachable from the data bus):
+    //   0x8000_0000 - 0x8000_0FFF  TCM (4 KB): .rodata, .data, .bss, stack
+    //   0xC000_0000                GPIO {SDA,SCL} out / pin in
+    //   0xC000_0004                UART TX data / busy
+    //   0xC000_0008                7-segment data
+    //   0xC000_000C                GPIO output latch (read-only debug)
+    //   0xC000_0FFC                reserved: simulation halt ("tohost")
+    //   anything else              unmapped -> dbus_error (reads return 0)
+    // This decode is exact and runs on the registered EX/MEM address.
+    // The TCM *write* enable is decoded in EX on addr[31:30] only, to keep
+    // logic off the forwarding -> ALU -> port-A path. A store to
+    // 0x8000_1000-0xBFFF_FFFF therefore also writes an aliased TCM word; it is
+    // still flagged by dbus_error. The EX-stage fault check planned for traps
+    // will close this.
+    assign is_tcm_access    = (ex_mem_alu_result[31:12] == 20'h80000);
+    assign is_periph_region = (ex_mem_alu_result[31:12] == 20'hC0000);
+    assign is_tohost        = is_periph_region & (ex_mem_alu_result[11:2] == 10'h3FF);
+    assign is_periph_mapped = (is_periph_region & (ex_mem_alu_result[11:4] == 8'h00)) | is_tohost;
 
-    // Gate memory control signals — each region is mutually exclusive
-    assign dmem_mem_read  = ex_mem_mem_read  & ~is_tcm_access & ~is_gpio_access;
-    assign dmem_mem_write = ex_mem_mem_write & ~is_tcm_access & ~is_gpio_access;
-    // (TCM writes are issued from EX; see "TCM Port A" in the EX stage.)
+    assign mem_access = ex_mem_mem_read | ex_mem_mem_write;
+    assign dbus_error = mem_access & ~is_tcm_access & ~is_periph_mapped;
 
-    // ---- Peripheral Sub-Decode (0xC000_xxxx region) ----
-    assign is_i2c_access  = is_gpio_access & (ex_mem_alu_result[3:2] == 2'b00);
-    assign is_uart_access = is_gpio_access & (ex_mem_alu_result[3:2] == 2'b01);
-    assign is_seg_access  = is_gpio_access & (ex_mem_alu_result[3:2] == 2'b10);
+    // ---- Peripheral Sub-Decode (0xC000_000x page) ----
+    assign is_i2c_access  = is_periph_mapped & ~is_tohost & (ex_mem_alu_result[3:2] == 2'b00);
+    assign is_uart_access = is_periph_mapped & ~is_tohost & (ex_mem_alu_result[3:2] == 2'b01);
+    assign is_seg_access  = is_periph_mapped & ~is_tohost & (ex_mem_alu_result[3:2] == 2'b10);
     assign gpio_we        = ex_mem_mem_write &  is_i2c_access;
     assign uart_we        = ex_mem_mem_write &  is_uart_access;
     assign seg_we         = ex_mem_mem_write &  is_seg_access;
 
-    // Standard data memory (non-TCM region)
-    data_memory u_dmem (
-        .clk        (clk),
-        .mem_read   (dmem_mem_read),
-        .mem_write  (dmem_mem_write),
-        .addr       (ex_mem_alu_result),
-        .write_data (ex_mem_rs2_data),
-        .read_data  (dmem_read_data)
-    );
-
     // TCM: True Dual-Port BRAM
-    tcm_ram u_tcm (
+    tcm_ram #(.INIT_FILE(TCM_INIT)) u_tcm (
         .clka   (clk),
         .wea    (tcm_wea),
         .addra  (tcm_addra),
@@ -575,15 +585,15 @@ module cpu_pipeline_top (
     end
 
     // ========================================================================
-    //  MEM Read Data Mux — 3-Way: DMEM / TCM / Peripherals
+    //  MEM Read Data Mux — TCM / Peripherals / unmapped (0)
     // ========================================================================
     always_comb begin
-        if (is_gpio_access)
-            mem_read_data_muxed = gpio_rdata;
-        else if (is_tcm_access)
+        if (is_tcm_access)
             mem_read_data_muxed = tcm_douta;
+        else if (is_periph_mapped && !is_tohost)
+            mem_read_data_muxed = gpio_rdata;
         else
-            mem_read_data_muxed = dmem_read_data;
+            mem_read_data_muxed = 32'b0;
     end
 
     // ========================================================================

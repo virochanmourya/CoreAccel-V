@@ -9,7 +9,9 @@
 //               Distributed RAM (LUTRAM) is used to satisfy this combinational read requirement.
 // ============================================================================
 
-module instruction_memory_pipe (
+module instruction_memory_pipe #(
+    parameter INIT_FILE = "imem.hex"     // .text image from `make fw`
+)(
     input  logic        clk,           // Used only for write port (synthesis)
     input  logic [31:0] addr,
     output logic [31:0] instruction
@@ -18,7 +20,7 @@ module instruction_memory_pipe (
 
     initial begin
         for (int i = 0; i < 2048; i++) mem[i] = 32'h00000013; // NOP
-        $readmemh("firmware.hex", mem);
+        $readmemh(INIT_FILE, mem);
     end
 
     assign instruction = mem[addr[12:2]];

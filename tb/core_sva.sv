@@ -13,12 +13,12 @@ module core_sva (
     input logic [31:0] tcm_dina,
     // The same store one cycle later, in MEM
     input logic        ex_mem_mem_write,
-    input logic        is_tcm_access,
     input logic [31:0] ex_mem_alu_result,
     input logic [31:0] ex_mem_rs2_data
 );
     logic mem_tcm_store;
-    assign mem_tcm_store = ex_mem_mem_write & is_tcm_access;
+    // Same region rule as the EX-stage TCM write enable (addr[31:30] == 2'b10).
+    assign mem_tcm_store = ex_mem_mem_write & (ex_mem_alu_result[31:30] == 2'b10);
 
     // ---- One write per store -------------------------------------------
     // A store spends exactly one cycle in MEM. So "every TCM write is followed
@@ -54,7 +54,6 @@ bind cpu_pipeline_top core_sva u_core_sva (
     .tcm_addra         (tcm_addra),
     .tcm_dina          (tcm_dina),
     .ex_mem_mem_write  (ex_mem_mem_write),
-    .is_tcm_access     (is_tcm_access),
     .ex_mem_alu_result (ex_mem_alu_result),
     .ex_mem_rs2_data   (ex_mem_rs2_data)
 );

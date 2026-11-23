@@ -1,17 +1,17 @@
 # ===========================================================================
 # crt0.S — CoreAccel-V Bare-Metal Boot Sequence (Harvard Architecture)
 #
-# Executed at reset (PC = 0x00000000). This code:
-#   1. Initializes the stack pointer (sp/x2) to TCM top
+# Executed at reset (PC = 0x00000000, IMEM). This code:
+#   1. Initializes the stack pointer (sp/x2) to TCM top (0x80001000)
 #   2. Initializes the global pointer (gp/x3) for linker relaxation
-#   3. Zeroes the .bss section in TCM
-#   4. Zeroes the .fast_scratchpad section in DMEM
-#   5. Calls main()
-#   6. Enters a diagnostic halt loop if main() returns
+#   3. Zeroes .bss (incl. .sbss/COMMON) in TCM with a word loop
+#   4. Calls main()
+#   5. Spins forever if main() returns
 #
-# NOTE: No .data copy. On this Harvard architecture, the CPU data bus
-# cannot reach IMEM. Initialized data is pre-loaded into TCM BRAM via
-# $readmemh("tcm_init.hex") at FPGA configuration time.
+# Memory map: IMEM holds .text only. TCM holds .rodata, .data, .bss and the
+# stack; there is no DMEM. .rodata and .data are preloaded into TCM by
+# hardware (tcm.hex), so there is no .data copy loop here: the data bus
+# cannot reach IMEM.
 # ===========================================================================
 
     .section .text.init, "ax", @progbits
@@ -58,37 +58,13 @@ _start:
 .Lzero_bss_done:
 
     # ================================================================
-    # Step 4: Zero .fast_scratchpad section in DMEM
-    # Same ALIGN(4) guarantee from linker script.
-    # ================================================================
-    lui     a0, %hi(_s_scratchpad)
-    addi    a0, a0, %lo(_s_scratchpad)
-    lui     a1, %hi(_e_scratchpad)
-    addi    a1, a1, %lo(_e_scratchpad)
-
-.Lzero_scratch:
-    bge     a0, a1, .Lzero_scratch_done
-    sw      zero, 0(a0)
-    addi    a0, a0, 4
-    j       .Lzero_scratch
-.Lzero_scratch_done:
-
-    # ================================================================
-    # Step 5: Call main()
+    # Step 4: Call main()
     # ================================================================
     jal     ra, main
 
     # ================================================================
-    # Step 6: Halt — main() should never return in bare-metal
-    #
-    # Write a diagnostic signature to DMEM[0] so we can detect this
-    # condition on the logic analyzer or via debug_wb LEDs.
+    # Step 5: main() should never return in bare-metal — spin forever
     # ================================================================
-    lui     t0, 0xDEAD0         # t0 = 0xDEAD0000
-    addi    t0, t0, 0x10        # t0 = 0xDEAD0010 (arbitrary sentinel)
-    lui     t1, %hi(0x00010000) # t1 = DMEM base
-    sw      t0, 0(t1)           # Write sentinel to DMEM[0]
-
 .Lhalt:
     j       .Lhalt              # Spin forever
 

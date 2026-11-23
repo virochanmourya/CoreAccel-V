@@ -15,6 +15,10 @@
 `define PRB_ST_ADDR    dut.ex_mem_alu_result
 `define PRB_ST_DATA    dut.ex_mem_rs2_data
 
+// Data-bus error stub (load/store to an unmapped address), in MEM
+`define PRB_DBUS_ERR   dut.dbus_error
+`define PRB_DBUS_ADDR  dut.ex_mem_alu_result
+
 // Register write-back port (retirement proxy; no PC is carried to WB yet)
 `define PRB_WB_WE      dut.mem_wb_reg_write
 `define PRB_WB_RD      dut.mem_wb_rd_addr

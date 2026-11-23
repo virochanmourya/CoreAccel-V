@@ -47,6 +47,13 @@ begin_signature:
 end_signature:
 .endm
 
+// Declare how many data-bus errors (accesses to unmapped addresses) the test
+// makes on purpose. Default is 0: any unmapped access fails the test.
+.macro EXPECT_DBUS_ERRORS count
+    .globl  expected_dbus_errors
+    .set    expected_dbus_errors, \count
+.endm
+
 // Absolute address of a symbol, no PC-relative arithmetic.
 .macro LA_ABS reg, sym
     lui     \reg, %hi(\sym)

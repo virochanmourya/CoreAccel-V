@@ -8,6 +8,7 @@ Writes into <outdir>:
   tcm.hex       initialised data for TCM (0x8000_0000, 4 KB); omitted if empty
   expected.hex  contents of the non-loaded .expected section (tests only)
   plusargs.txt  KEY=VALUE lines consumed by the xsim harness
+                (DBUS_ERRORS=<n> if the ELF defines expected_dbus_errors)
 
 Only PT_LOAD segments with file contents are emitted, routed by physical
 address. Anything outside IMEM/TCM is an error, so a stray section can never
@@ -127,6 +128,9 @@ def main():
         with open(path, "w") as f:
             f.write("".join("%08x\n" % w for w in exp))
         args += ["EXPECTED=%s" % path, "SIG_BEGIN=%08x" % sig_begin, "SIG_WORDS=%d" % len(exp)]
+
+    if "expected_dbus_errors" in symbols:
+        args.append("DBUS_ERRORS=%d" % symbols["expected_dbus_errors"])
 
     with open(os.path.join(outdir, "plusargs.txt"), "w") as f:
         f.write("\n".join(args) + "\n")
