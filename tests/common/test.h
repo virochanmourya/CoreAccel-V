@@ -81,3 +81,11 @@ end_signature:
 .macro MAC_RDHI rd
     .insn r 0x0B, 4, 0, \rd, x0, x0
 .endm
+// READ_SHIFT: rd = sat32(round_half_up(acc >>> rs1[5:0]))
+.macro MAC_RDSHIFT rd, rs1
+    .insn r 0x0B, 5, 0, \rd, \rs1, x0
+.endm
+// READ_STATUS: rd = {31'b0, sticky overflow}
+.macro MAC_STATUS rd
+    .insn r 0x0B, 6, 0, \rd, x0, x0
+.endm

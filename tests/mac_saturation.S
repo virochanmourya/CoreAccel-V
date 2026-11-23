@@ -1,7 +1,6 @@
-// mac_saturation — F2: accumulator readback past the signed 64-bit range.
-// Expected values encode the PROPOSED behaviour (readback saturates to
-// INT64_MAX / INT64_MIN); the exact semantics are a pending design decision.
-// MACs are separated by NOPs so F1 does not interfere.
+// mac_saturation — F2: READ_LO/READ_HI saturate the 72-bit accumulator to
+// signed 64-bit (INT64_MAX / INT64_MIN) instead of wrapping, and a saturating
+// readback sets the sticky overflow flag.
 #include "test.h"
 
     .data
@@ -37,5 +36,7 @@ wmax:   .word 0x7fffffff
     CHECK   t0, 0x80000000
     MAC_RDLO t1
     CHECK   t1, 0x00000000
+    MAC_STATUS t2
+    CHECK   t2, 1
 
     TEST_END

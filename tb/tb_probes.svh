@@ -25,8 +25,10 @@
 `define PRB_EX_HOLD      dut.mac_stall_request
 // RTL driver of PRB_EX_HOLD. xsim does not re-evaluate a continuous assign on
 // `release`, so the hook re-forces the net to this expression after a hold.
-// Keep it identical to the assign in cpu_pipeline_top.sv.
-`define PRB_EX_HOLD_RTL  (dut.is_mac_ex & ~dut.mac_done_ex)
+// MUST stay identical to `assign mac_stall_request` in cpu_pipeline_top.sv.
+// If it drifts, HOLD=0 still passes but HOLD>=1 runs fail on multi-cycle ops,
+// so always run the regression at HOLD=0..3 after touching the stall logic.
+`define PRB_EX_HOLD_RTL  (dut.mac_op_ex & ~dut.mac_done_ex)
 
 // Register write-back port (retirement proxy; no PC is carried to WB yet)
 `define PRB_WB_WE      dut.mem_wb_reg_write

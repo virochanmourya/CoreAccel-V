@@ -24,7 +24,8 @@ module control_unit_pipe (
     output logic       is_mac,
     output logic       is_mac_clear,
     output logic       mac_to_reg,
-    output logic       is_mac_read_hi,
+    output logic [1:0] mac_rd_op,      // MAC read: 00 LO, 01 HI, 10 SHIFT, 11 STATUS
+    output logic       is_mac_rdshift, // READ_SHIFT (multi-cycle, uses the MAC FSM)
     output logic       rs1_valid,
     output logic       rs2_valid
 );
@@ -44,7 +45,8 @@ module control_unit_pipe (
         is_mac         = 1'b0;
         is_mac_clear   = 1'b0;
         mac_to_reg     = 1'b0;
-        is_mac_read_hi = 1'b0;
+        mac_rd_op      = 2'b00;
+        is_mac_rdshift = 1'b0;
         rs1_valid      = 1'b0;
         rs2_valid      = 1'b0;
 
@@ -136,14 +138,26 @@ module control_unit_pipe (
                         rs2_valid = 1'b1;
                     end
                     3'b001: is_mac_clear = 1'b1;
-                    3'b011: begin
+                    3'b011: begin                       // READ_LO
                         mac_to_reg     = 1'b1;
-                        is_mac_read_hi = 1'b0;
+                        mac_rd_op      = 2'b00;
                         reg_write      = 1'b1;
                     end
-                    3'b100: begin
+                    3'b100: begin                       // READ_HI
                         mac_to_reg     = 1'b1;
-                        is_mac_read_hi = 1'b1;
+                        mac_rd_op      = 2'b01;
+                        reg_write      = 1'b1;
+                    end
+                    3'b101: begin                       // READ_SHIFT rd, rs1
+                        mac_to_reg     = 1'b1;
+                        mac_rd_op      = 2'b10;
+                        is_mac_rdshift = 1'b1;
+                        reg_write      = 1'b1;
+                        rs1_valid      = 1'b1;
+                    end
+                    3'b110: begin                       // READ_STATUS rd
+                        mac_to_reg     = 1'b1;
+                        mac_rd_op      = 2'b11;
                         reg_write      = 1'b1;
                     end
                     default: ;

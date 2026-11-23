@@ -2,5 +2,4 @@
 # Remove a line when its fix lands (the regression reports XPASS as a reminder).
 #
 # test              bug  description
-mac_saturation      F2   64-bit accumulator readback wraps instead of saturating
 illegal             F5   unsupported encodings (MUL) write registers

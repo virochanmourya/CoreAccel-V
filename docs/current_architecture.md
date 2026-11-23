@@ -388,7 +388,7 @@ graph LR
         MULT["Signed Multiplier\n32 x 32 = 64-bit"]
         ACCUM["72-bit Signed Accumulator\nwith Saturation"]
         SAT["Saturation Logic\nSAT_MAX / SAT_MIN"]
-        FSM_BLOCK["4-Cycle FSM Controller"]
+        FSM_BLOCK["5-Cycle FSM Controller"]
     end
 
     subgraph OUTPUTS["MAC Outputs"]
@@ -442,10 +442,18 @@ stateDiagram-v2
 
 | Instruction | Opcode | funct3 / funct7 | Description |
 |:------------|:-------|:-----------------|:------------|
-| `MAC rd, rs1, rs2` | `0001011` | — | Multiply `rs1 × TCM[rs2]`, accumulate into 72-bit register |
-| `MAC_CLEAR` | `0001011` | — | Clear the 72-bit accumulator to zero |
-| `MAC_READ_LO rd` | `0001011` | — | Read `accumulator[31:0]` into `rd` |
-| `MAC_READ_HI rd` | `0001011` | — | Read `accumulator[63:32]` into `rd` |
+| `MAC rs1, rs2` | `0001011` | `000` / `0000000` | `acc += rs1 × TCM[rs2]` (32×32 signed product, 72-bit saturating accumulator). Holds EX for 5 cycles |
+| `MAC_CLEAR` | `0001011` | `001` / `0000000` | Clear the 72-bit accumulator and the sticky overflow flag |
+| (reserved) | `0001011` | `010` | Unassigned |
+| `MAC_READ_LO rd` | `0001011` | `011` / `0000000` | `rd = sat64(acc)[31:0]` |
+| `MAC_READ_HI rd` | `0001011` | `100` / `0000000` | `rd = sat64(acc)[63:32]` |
+| `MAC_READ_SHIFT rd, rs1` | `0001011` | `101` / `0000000` | `rd = sat32(round_half_up(acc >>> rs1[5:0]))`. Holds EX for 4 cycles |
+| `MAC_READ_STATUS rd` | `0001011` | `110` / `0000000` | `rd[0]` = sticky overflow flag, `rd[31:1] = 0` (reserved) |
+| (reserved) | `0001011` | `111` | Unassigned |
+
+**Readback and sticky overflow.** `MAC_READ_LO` and `MAC_READ_HI` read the accumulator saturated to signed 64 bits, so they never wrap. `MAC_READ_SHIFT` adds `2^(shift-1)` before the arithmetic shift (nothing is added for shift 0), so shift 15 gives a Q15 result and shift 31 a Q31 result. The sticky overflow flag is set when the 72-bit accumulator saturates or when `MAC_READ_LO`, `MAC_READ_HI` or `MAC_READ_SHIFT` has to saturate its result. Only `MAC_CLEAR` clears it; `MAC_READ_STATUS` reads it.
+
+**EX-hold latency.** `MAC` holds EX for 5 cycles. `MAC_READ_SHIFT` holds EX for 4 cycles.
 
 ### MAC Pipeline Stall Logic
 
@@ -456,7 +464,7 @@ mac_stall_request = is_mac_ex & ~(mac_started_reg & ~mac_busy_ex)
 When MAC is active:
   - Pipeline stalls (IF, ID, EX held)
   - EX/MEM register is flushed
-  - MAC runs for 4 cycles: IDLE → S_INPUT → S_MULTIPLY → S_ACCUMULATE → IDLE
+  - MAC holds EX for 5 cycles: IDLE → S_INPUT → S_MULTIPLY → S_ACCUMULATE → IDLE
 ```
 
 ### Accumulator Saturation

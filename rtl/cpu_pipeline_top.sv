@@ -49,7 +49,8 @@ module cpu_pipeline_top #(
     logic [3:0]  id_alu_control;
     logic        id_branch;
     logic        id_alu_src_a, id_pc_to_reg, id_jump;
-    logic        id_is_mac, id_is_mac_clear, id_mac_to_reg, id_is_mac_read_hi;
+    logic        id_is_mac, id_is_mac_clear, id_mac_to_reg, id_is_mac_rdshift;
+    logic [1:0]  id_mac_rd_op;
     logic        id_rs1_valid, id_rs2_valid;
 
     // ---- ID Stage: Data ----
@@ -64,7 +65,8 @@ module cpu_pipeline_top #(
     logic [31:0] id_ex_pc, id_ex_rs1_data, id_ex_rs2_data, id_ex_imm;
     logic [4:0]  id_ex_rs1_addr, id_ex_rs2_addr, id_ex_rd_addr;
     logic [2:0]  id_ex_funct3;
-    logic        is_mac_ex, is_mac_clear_ex, mac_to_reg_ex, is_mac_read_hi_ex;
+    logic        is_mac_ex, is_mac_clear_ex, mac_to_reg_ex, is_mac_rdshift_ex;
+    logic [1:0]  mac_rd_op_ex;
 
     // ---- EX Stage ----
     logic [31:0] forwarded_a, forwarded_b;
@@ -128,8 +130,11 @@ module cpu_pipeline_top #(
     // ---- MAC ----
     logic        mac_busy_ex, mac_started_reg, mac_start_pulse, mac_stall_request;
     logic        mac_done_ex; // MAC in EX has finished and advances this cycle
-    logic signed [63:0] mac_result_full_ex;
-    logic        mac_overflow_ex;
+    logic signed [63:0] mac_result_full_ex; // accumulator saturated to signed 64-bit
+    logic [31:0] mac_read_shift_ex;  // READ_SHIFT result (registered in mac_unit)
+    logic        mac_overflow_ex;    // sticky overflow (READ_STATUS bit 0)
+    logic        mac_op_ex;          // multi-cycle MAC-unit op in EX: MAC or READ_SHIFT
+    logic        mac_rd64_strobe;    // READ_LO/HI in EX (may set the sticky flag)
     logic [31:0] sliced_mac_result;
 
     // ---- EX/MEM Register Outputs ----
@@ -229,7 +234,8 @@ module cpu_pipeline_top #(
         .is_mac         (id_is_mac),
         .is_mac_clear   (id_is_mac_clear),
         .mac_to_reg     (id_mac_to_reg),
-        .is_mac_read_hi (id_is_mac_read_hi),
+        .mac_rd_op      (id_mac_rd_op),
+        .is_mac_rdshift (id_is_mac_rdshift),
         .rs1_valid      (id_rs1_valid),
         .rs2_valid      (id_rs2_valid)
     );
@@ -301,7 +307,8 @@ module cpu_pipeline_top #(
         .is_mac_in       (id_is_mac),       .is_mac_out      (is_mac_ex),
         .is_mac_clear_in (id_is_mac_clear), .is_mac_clear_out(is_mac_clear_ex),
         .mac_to_reg_in   (id_mac_to_reg),   .mac_to_reg_out  (mac_to_reg_ex),
-        .is_mac_read_hi_in(id_is_mac_read_hi), .is_mac_read_hi_out(is_mac_read_hi_ex),
+        .mac_rd_op_in    (id_mac_rd_op),    .mac_rd_op_out   (mac_rd_op_ex),
+        .is_mac_rdshift_in(id_is_mac_rdshift), .is_mac_rdshift_out(is_mac_rdshift_ex),
         // Data
         .pc_in           (if_id_pc),        .pc_out          (id_ex_pc),
         .rs1_data_in     (id_rs1_data),     .rs1_data_out    (id_ex_rs1_data),
@@ -368,16 +375,18 @@ module cpu_pipeline_top #(
     );
 
     // ---- MAC Pulse Generator & Stall ----
-    // mac_started_reg marks "the MAC currently in EX has been issued". It must
-    // be cleared on the cycle that MAC completes and leaves EX (mac_done_ex),
+    // Multi-cycle MAC-unit ops (MAC, READ_SHIFT) hold EX until they finish.
+    // mac_started_reg marks "the op currently in EX has been issued". It must
+    // be cleared on the cycle that op completes and leaves EX (mac_done_ex),
     // not only when EX holds a non-MAC: otherwise a MAC immediately following
     // another MAC sees started=1, gets no start pulse and no stall, and is lost.
-    assign mac_done_ex       = is_mac_ex & mac_started_reg & ~mac_busy_ex;
-    assign mac_start_pulse   = is_mac_ex & ~mac_started_reg & ~mac_busy_ex;
-    assign mac_stall_request = is_mac_ex & ~mac_done_ex;
+    assign mac_op_ex         = is_mac_ex | is_mac_rdshift_ex;
+    assign mac_done_ex       = mac_op_ex & mac_started_reg & ~mac_busy_ex;
+    assign mac_start_pulse   = mac_op_ex & ~mac_started_reg & ~mac_busy_ex;
+    assign mac_stall_request = mac_op_ex & ~mac_done_ex;
 
     always_ff @(posedge clk) begin
-        if (reset || !is_mac_ex || mac_done_ex)
+        if (reset || !mac_op_ex || mac_done_ex)
             mac_started_reg <= 1'b0;
         else if (mac_start_pulse)
             mac_started_reg <= 1'b1;
@@ -444,19 +453,32 @@ module cpu_pipeline_top #(
         .clk             (clk),
         .reset           (reset),
         .mac_start       (mac_start_pulse),
+        .start_is_shift  (is_mac_rdshift_ex),
+        .shamt           (forwarded_a[5:0]),  // latched at start (READ_SHIFT)
         .clear_accum     (is_mac_clear_ex),
+        .rd64_strobe     (mac_rd64_strobe),
         .mac_abort       (pc_redirect),
         .operand_a       (forwarded_a),
         .tcm_data        (tcm_doutb), // Fed by TCM Port B output
         .mac_result_full (mac_result_full_ex),
+        .read_shift_result(mac_read_shift_ex),
         .mac_busy        (mac_busy_ex),
         .mac_overflow    (mac_overflow_ex)
     );
 
-    // ---- MAC 64-bit Slicer ----
-    assign sliced_mac_result = is_mac_read_hi_ex
-    ? mac_result_full_ex[63:32]
-    : mac_result_full_ex[31:0];
+    // ---- MAC read select (result path into the EX result mux only) ----
+    // All inputs are registers inside mac_unit; nothing here depends on the
+    // forwarding muxes or the ALU.
+    assign mac_rd64_strobe = mac_to_reg_ex & ~mac_rd_op_ex[1];
+
+    always_comb begin
+        case (mac_rd_op_ex)
+            2'b00:   sliced_mac_result = mac_result_full_ex[31:0];    // READ_LO
+            2'b01:   sliced_mac_result = mac_result_full_ex[63:32];   // READ_HI
+            2'b10:   sliced_mac_result = mac_read_shift_ex;           // READ_SHIFT
+            default: sliced_mac_result = {31'b0, mac_overflow_ex};    // READ_STATUS
+        endcase
+    end
 
     // ---- EX Stage Result Mux ----
     assign pc_plus4_ex = id_ex_pc + 32'd4;
