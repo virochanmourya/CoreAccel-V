@@ -80,6 +80,7 @@ module cpu_pipeline_top #(
     logic [31:0] tcm_douta; // Port A read data
     logic [31:0] ex_eff_addr; // AGU: load/store effective address rs1 + imm
     logic        ex_is_tcm; // EX-stage decode: effective address is in TCM (exact)
+    logic        ex_hold_src; // OR of every EX-hold source (see "EX hold" below)
     logic        ex_hold; // EX instruction does not advance this cycle
     logic [3:0]  cpu_tcm_we; // CPU port-A request: byte write enables (from EX)
     logic [1:0]  ex_addr_lo; // Effective address [1:0]
@@ -176,12 +177,21 @@ module cpu_pipeline_top #(
     // pc_redirect: branch taken OR unconditional jump
     assign pc_redirect = branch_taken | id_ex_jump;
 
-    assign pc_write        = ~(stall | mac_stall_request) | pc_redirect;
-    assign if_id_stall     = (stall | mac_stall_request) & ~pc_redirect;
+    // ---- EX hold ----
+    // ex_hold is the single net that holds the EX instruction (IF/ID/EX
+    // frozen, a bubble into MEM). Every hold source is ORed into ex_hold_src;
+    // nothing else may read a hold source directly. The testbench EX-hold
+    // hook forces ex_hold and then re-forces it to ex_hold_src, so adding a
+    // source here needs no testbench change.
+    assign ex_hold_src = mac_stall_request;
+    assign ex_hold     = ex_hold_src;
+
+    assign pc_write        = ~(stall | ex_hold) | pc_redirect;
+    assign if_id_stall     = (stall | ex_hold) & ~pc_redirect;
     assign if_id_flush     = pc_redirect;
     assign id_ex_flush     = stall | pc_redirect;
-    assign id_ex_stall     = mac_stall_request;
-    assign ex_mem_flush_sig = mac_stall_request;
+    assign id_ex_stall     = ex_hold;
+    assign ex_mem_flush_sig = ex_hold;
 
     // ========================================================================
     //  IF STAGE
@@ -419,7 +429,6 @@ module cpu_pipeline_top #(
     // 0x8000_0000-0x8000_0FFF writes nothing (it raises dbus_error in MEM).
     assign ex_eff_addr   = forwarded_a + id_ex_imm;
     assign ex_is_tcm     = (ex_eff_addr[31:12] == 20'h80000);
-    assign ex_hold       = id_ex_stall;
     assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ~ex_hold}};
     assign cpu_tcm_addr  = ex_eff_addr[11:2];
     assign cpu_tcm_wdata = ex_store_data;

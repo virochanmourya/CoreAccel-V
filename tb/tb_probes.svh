@@ -27,13 +27,12 @@
 // EX stage: a TCM store is in EX, and the EX hold signal (forced by the
 // +HOLD_EX_STORES hook to emulate a multi-cycle unit / DMA arbiter holding EX)
 `define PRB_EX_TCM_STORE (dut.id_ex_mem_write && dut.ex_is_tcm)
-`define PRB_EX_HOLD      dut.mac_stall_request
-// RTL driver of PRB_EX_HOLD. xsim does not re-evaluate a continuous assign on
-// `release`, so the hook re-forces the net to this expression after a hold.
-// MUST stay identical to `assign mac_stall_request` in cpu_pipeline_top.sv.
-// If it drifts, HOLD=0 still passes but HOLD>=1 runs fail on multi-cycle ops,
-// so always run the regression at HOLD=0..3 after touching the stall logic.
-`define PRB_EX_HOLD_RTL  (dut.mac_op_ex & ~dut.mac_done_ex)
+`define PRB_EX_HOLD      dut.ex_hold
+// RTL driver of PRB_EX_HOLD: the net ex_hold is assigned from. xsim does not
+// re-evaluate a continuous assign on `release`, so the hook re-forces ex_hold
+// to this net after a hold. It is a single RTL net (the OR of every hold
+// source), not a copy of an expression, so new hold sources need no change here.
+`define PRB_EX_HOLD_RTL  dut.ex_hold_src
 
 // Register write-back port (retirement proxy; no PC is carried to WB yet)
 `define PRB_WB_WE      dut.mem_wb_reg_write
