@@ -72,7 +72,14 @@ module id_ex_reg (
 
     // Instruction fields
     input  logic [2:0]  funct3_in,
-    output logic [2:0]  funct3_out
+    output logic [2:0]  funct3_out,
+
+    // Operand refresh while held: the EX-stage forwarding mux outputs.
+    // When EX is held, its producers keep draining out of MEM/WB, so the
+    // forwarded value must be captured every held cycle, or the instruction
+    // falls back to the stale value read in ID.
+    input  logic [31:0] rs1_fwd_in,
+    input  logic [31:0] rs2_fwd_in
 );
 
     always_ff @(posedge clk) begin
@@ -123,6 +130,10 @@ module id_ex_reg (
             rs2_addr_out       <= rs2_addr_in;
             rd_addr_out        <= rd_addr_in;
             funct3_out         <= funct3_in;
+        end
+        else begin  // held: keep the instruction, refresh its operands
+            rs1_data_out       <= rs1_fwd_in;
+            rs2_data_out       <= rs2_fwd_in;
         end
     end
 

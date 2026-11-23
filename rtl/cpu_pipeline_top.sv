@@ -309,7 +309,9 @@ module cpu_pipeline_top #(
         .rs2_addr_in     (id_rs2),          .rs2_addr_out    (id_ex_rs2_addr),
         .rd_addr_in      (id_rd),           .rd_addr_out     (id_ex_rd_addr),
         // funct3
-        .funct3_in       (id_funct3),       .funct3_out      (id_ex_funct3)
+        .funct3_in       (id_funct3),       .funct3_out      (id_ex_funct3),
+        // Operand refresh while EX is held (see id_ex_reg)
+        .rs1_fwd_in      (forwarded_a),     .rs2_fwd_in      (forwarded_b)
     );
 
     // ========================================================================

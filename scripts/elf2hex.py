@@ -8,7 +8,8 @@ Writes into <outdir>:
   tcm.hex       initialised data for TCM (0x8000_0000, 4 KB); omitted if empty
   expected.hex  contents of the non-loaded .expected section (tests only)
   plusargs.txt  KEY=VALUE lines consumed by the xsim harness
-                (DBUS_ERRORS=<n> if the ELF defines expected_dbus_errors)
+                (DBUS_ERRORS=<n> if the ELF defines expected_dbus_errors,
+                 HOLD_EX_STORES=<n> if it defines test_hold_ex_stores)
 
 Only PT_LOAD segments with file contents are emitted, routed by physical
 address. Anything outside IMEM/TCM is an error, so a stray section can never
@@ -129,6 +130,8 @@ def main():
             f.write("".join("%08x\n" % w for w in exp))
         args += ["EXPECTED=%s" % path, "SIG_BEGIN=%08x" % sig_begin, "SIG_WORDS=%d" % len(exp)]
 
+    if "test_hold_ex_stores" in symbols:   # listed before the Makefile's HOLD, so it wins
+        args.append("HOLD_EX_STORES=%d" % symbols["test_hold_ex_stores"])
     if "expected_dbus_errors" in symbols:
         args.append("DBUS_ERRORS=%d" % symbols["expected_dbus_errors"])
 

@@ -54,6 +54,13 @@ end_signature:
     .set    expected_dbus_errors, \count
 .endm
 
+// Hold every TCM store in EX for `cycles` cycles in this test (harness hook,
+// +HOLD_EX_STORES). Takes precedence over a regression-wide HOLD=<n>.
+.macro HOLD_EX_STORES cycles
+    .globl  test_hold_ex_stores
+    .set    test_hold_ex_stores, \cycles
+.endm
+
 // Absolute address of a symbol, no PC-relative arithmetic.
 .macro LA_ABS reg, sym
     lui     \reg, %hi(\sym)
