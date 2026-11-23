@@ -3,6 +3,7 @@
 #
 #   make regress            build + run every test in tests/*.S, print summary
 #   make test T=<name>      build + run one test (tests/<name>.S)
+#   HOLD=<n> make regress   ... with every TCM store held in EX for n cycles
 #   make tests              build all test images only
 #   make sim-build          compile + elaborate the xsim snapshot
 #   make fw                 build firmware/ into build/fw/{imem,tcm}.hex
@@ -75,6 +76,7 @@ define run_xsim
 	    $$(sed '/^$$/d; s/^/-testplusarg /' $(BUILD)/tests/$(1)/plusargs.txt) \
 	    -testplusarg TEST=$(1) \
 	    -testplusarg TIMEOUT=$(TIMEOUT) \
+	    $(if $(HOLD),-testplusarg HOLD_EX_STORES=$(HOLD)) \
 	    -testplusarg SIGOUT=$(BUILD)/tests/$(1)/signature.txt \
 	    -testplusarg TRACE=$(BUILD)/tests/$(1)/commit.log \
 	    -log $(BUILD)/tests/$(1)/xsim.log > /dev/null 2>&1; \

@@ -19,6 +19,15 @@
 `define PRB_DBUS_ERR   dut.dbus_error
 `define PRB_DBUS_ADDR  dut.ex_mem_alu_result
 
+// EX stage: a TCM store is in EX, and the EX hold signal (forced by the
+// +HOLD_EX_STORES hook to emulate a multi-cycle unit / DMA arbiter holding EX)
+`define PRB_EX_TCM_STORE (dut.id_ex_mem_write && dut.ex_is_tcm)
+`define PRB_EX_HOLD      dut.mac_stall_request
+// RTL driver of PRB_EX_HOLD. xsim does not re-evaluate a continuous assign on
+// `release`, so the hook re-forces the net to this expression after a hold.
+// Keep it identical to the assign in cpu_pipeline_top.sv.
+`define PRB_EX_HOLD_RTL  (dut.is_mac_ex & ~dut.mac_done_ex)
+
 // Register write-back port (retirement proxy; no PC is carried to WB yet)
 `define PRB_WB_WE      dut.mem_wb_reg_write
 `define PRB_WB_RD      dut.mem_wb_rd_addr

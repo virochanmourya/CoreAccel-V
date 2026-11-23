@@ -12,6 +12,8 @@
 //   +TEST=<name>       label used in the RESULT line
 //   +TRACE=<file>      register write-back log (commit_monitor)
 //   +DBUS_ERRORS=<n>   expected number of unmapped data accesses (default 0)
+//   +HOLD_EX_STORES=<n> hold every TCM store in EX for n cycles (forces the EX
+//                     hold) to check that a held store still writes exactly once
 //
 // The test ends with a store to HALT_ADDR. Output ends with exactly one line:
 //   RESULT PASS|FAIL|TIMEOUT test=<name> cycles=<n> ...
@@ -112,6 +114,26 @@ module tb_top;
         reset <= 1'b0;
     end
 
+    // ---------------------------------------------------------------- EX-hold hook
+    // Emulates a future multi-cycle EX unit or DMA arbiter: whenever a TCM store
+    // reaches EX, force the EX hold for hold_cycles cycles, then let it go.
+    int hold_cycles = 0;
+    int holds_done  = 0;
+    initial begin
+        if ($value$plusargs("HOLD_EX_STORES=%d", hold_cycles) && hold_cycles > 0) begin
+            forever begin
+                @(posedge clk); #1;
+                if (!reset && !halted && `PRB_EX_TCM_STORE) begin
+                    force `PRB_EX_HOLD = 1'b1;
+                    repeat (hold_cycles) @(posedge clk);
+                    #1 force `PRB_EX_HOLD = `PRB_EX_HOLD_RTL;   // back to the RTL driver
+                    holds_done++;
+                    @(posedge clk);      // let this store leave EX before re-arming
+                end
+            end
+        end
+    end
+
     // ---------------------------------------------------------------- halt / timeout
     always @(posedge clk) begin
         if (!reset && !halted) begin
@@ -161,7 +183,8 @@ module tb_top;
             $display("RESULT FAIL test=%s cycles=%0d sva_errors=%0d mismatches=%0d/%0d",
                      test_name, cycles, sva_errors, mismatches, sig_words);
         else if (mismatches == 0)
-            $display("RESULT PASS test=%s cycles=%0d checks=%0d", test_name, cycles, sig_words);
+            $display("RESULT PASS test=%s cycles=%0d checks=%0d%s", test_name, cycles, sig_words,
+                     hold_cycles > 0 ? $sformatf(" ex_holds=%0d", holds_done) : "");
         else
             $display("RESULT FAIL test=%s cycles=%0d mismatches=%0d/%0d",
                      test_name, cycles, mismatches, sig_words);
