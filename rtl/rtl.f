@@ -14,4 +14,5 @@ rtl/ex_mem_reg.sv
 rtl/mem_wb_reg.sv
 rtl/uart_tx.sv
 rtl/seg_display.sv
+rtl/od_pad.sv
 rtl/cpu_pipeline_top.sv

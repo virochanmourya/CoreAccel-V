@@ -68,6 +68,9 @@ module tb_top;
 
     uart_monitor u_uart (.clk(clk), .rx(uart_tx_out));
 
+    // I2C target at 0x48 (ADS1115 address), open-drain on the pulled-up bus
+    i2c_target_model #(.ADDR(7'h48)) u_i2c_target (.scl(i2c_scl), .sda(i2c_sda));
+
     // ---------------------------------------------------------------- config
     string       test_name, imem_file, tcm_file, exp_file, sig_out;
     logic [31:0] sig_begin;

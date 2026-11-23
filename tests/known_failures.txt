@@ -3,5 +3,4 @@
 #
 # test              bug  description
 mac_saturation      F2   64-bit accumulator readback wraps instead of saturating
-gpio_loopback       B3   I2C/GPIO pins are not connected (reads X)
 illegal             F5   unsupported encodings (MUL) write registers

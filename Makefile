@@ -28,6 +28,7 @@ ARCH    := -march=rv32i -mabi=ilp32
 RTL_F   := $(ROOT)/rtl/rtl.f
 RTL_SRC := $(addprefix $(ROOT)/,$(shell cat $(RTL_F)))
 TB_SV   := $(ROOT)/tb/commit_monitor.sv $(ROOT)/tb/uart_monitor.sv $(ROOT)/tb/core_sva.sv \
+           $(ROOT)/tb/i2c_target_model.sv \
            $(ROOT)/tb/tb_top.sv
 TB_DEPS := $(TB_SV) $(wildcard $(ROOT)/tb/*.svh)
 

@@ -104,8 +104,10 @@ module cpu_pipeline_top #(
     logic        gpio_we; // I2C GPIO register write enable
     logic [1:0]  gpio_out_reg; // {SDA, SCL} output latch
     logic [31:0] gpio_rdata; // Peripheral read-back data to CPU
-    logic        scl_pin_in; // Sampled SCL pin state
-    logic        sda_pin_in; // Sampled SDA pin state
+    logic        scl_pin_in; // Synchronised SCL pin state
+    logic        sda_pin_in; // Synchronised SDA pin state
+    logic        scl_pad_in, sda_pad_in; // Raw pad levels (asynchronous)
+    (* ASYNC_REG = "TRUE" *) logic [1:0] i2c_sync1, i2c_sync2; // {SDA, SCL} 2-FF synchroniser
 
     // ---- UART TX MMIO (0xC000_0004) ----
     logic        uart_we; // UART TX trigger write enable
@@ -556,12 +558,13 @@ module cpu_pipeline_top #(
     );
 
     // ========================================================================
-    //  I2C GPIO MMIO Register (0xC000_0000)
+    //  I2C GPIO MMIO Register (0xC000_0000) — software bit-banged I2C
     // ========================================================================
-
-    // ========================================================================
-    //  I2C Bidirectional I/O — Isolated IOBUF Wrapper
-    // ========================================================================
+    // Write: bit0 = SCL, bit1 = SDA. 1 releases the line (pulled up
+    // externally), 0 drives it low (open-drain). Reset: both released.
+    // Read:  bit0/bit1 = actual SCL/SDA pin levels, through a 2-FF
+    //        synchroniser (an I2C target can drive SDA / stretch SCL at any
+    //        time). A write is visible on a read 3 cycles later.
 
     // ---- GPIO Output Register (Write Path) ----
     always_ff @(posedge clk) begin
@@ -571,7 +574,22 @@ module cpu_pipeline_top #(
             gpio_out_reg <= ex_mem_rs2_data[1:0];
     end
 
-    // ---- GPIO Read-Back (Read Path) ----
+    // ---- Open-drain pads ----
+    od_pad u_scl_pad (.drive_low(~gpio_out_reg[0]), .pad_in(scl_pad_in), .pad(i2c_scl));
+    od_pad u_sda_pad (.drive_low(~gpio_out_reg[1]), .pad_in(sda_pad_in), .pad(i2c_sda));
+
+    // ---- Input synchroniser (Read Path) ----
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            i2c_sync1 <= 2'b11;
+            i2c_sync2 <= 2'b11;
+        end else begin
+            i2c_sync1 <= {sda_pad_in, scl_pad_in};
+            i2c_sync2 <= i2c_sync1;
+        end
+    end
+    assign scl_pin_in = i2c_sync2[0];
+    assign sda_pin_in = i2c_sync2[1];
 
     // ========================================================================
     //  UART TX Peripheral (0xC000_0004)
