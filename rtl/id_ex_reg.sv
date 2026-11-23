@@ -76,6 +76,10 @@ module id_ex_reg (
     input  logic [2:0]  funct3_in,
     output logic [2:0]  funct3_out,
 
+    // Illegal-instruction flag (reaches EX only if not squashed)
+    input  logic        illegal_in,
+    output logic        illegal_out,
+
     // Operand refresh while held: the EX-stage forwarding mux outputs.
     // When EX is held, its producers keep draining out of MEM/WB, so the
     // forwarded value must be captured every held cycle, or the instruction
@@ -109,6 +113,7 @@ module id_ex_reg (
             rs2_addr_out       <= 5'd0;
             rd_addr_out        <= 5'd0;
             funct3_out         <= 3'd0;
+            illegal_out        <= 1'b0;
         end
         else if (!stall) begin
             reg_write_out      <= reg_write_in;
@@ -134,6 +139,7 @@ module id_ex_reg (
             rs2_addr_out       <= rs2_addr_in;
             rd_addr_out        <= rd_addr_in;
             funct3_out         <= funct3_in;
+            illegal_out        <= illegal_in;
         end
         else begin  // held: keep the instruction, refresh its operands
             rs1_data_out       <= rs1_fwd_in;

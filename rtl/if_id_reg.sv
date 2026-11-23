@@ -23,7 +23,7 @@ module if_id_reg (
     always_ff @(posedge clk) begin
         if (reset || flush) begin
             pc_out          <= 32'd0;
-            instruction_out <= 32'd0;
+            instruction_out <= 32'h0000_0013;   // canonical NOP (addi x0, x0, 0)
         end
         else if (!stall) begin
             pc_out          <= pc_in;

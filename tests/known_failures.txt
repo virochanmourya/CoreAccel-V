@@ -2,4 +2,3 @@
 # Remove a line when its fix lands (the regression reports XPASS as a reminder).
 #
 # test              bug  description
-illegal             F5   unsupported encodings (MUL) write registers

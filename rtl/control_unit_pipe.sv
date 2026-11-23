@@ -1,7 +1,14 @@
 // ============================================================================
 // Module      : control_unit_pipe
 // File        : control_unit_pipe.sv
-// Description : Full RV32I + CUSTOM-0 DSP Control Unit
+// Description : RV32I (no Zicsr/traps yet) + CUSTOM-0 DSP Control Unit.
+//               Any encoding the core does not implement is flagged `illegal`
+//               and decodes as a bubble: all control outputs are 0, so it has
+//               no architectural effect. FENCE (funct3 000) is a legal NOP.
+//               Illegal: unknown opcodes (incl. 0x00000000 and compressed),
+//               SYSTEM (ECALL/EBREAK/CSR*), M-extension and other bad funct7,
+//               reserved load/store/branch/JALR/MISC-MEM funct3, and
+//               CUSTOM-0 funct3 010/111 or funct7 != 0.
 // ============================================================================
 
 module control_unit_pipe (
@@ -27,8 +34,35 @@ module control_unit_pipe (
     output logic [1:0] mac_rd_op,      // MAC read: 00 LO, 01 HI, 10 SHIFT, 11 STATUS
     output logic       is_mac_rdshift, // READ_SHIFT (multi-cycle, uses the MAC FSM)
     output logic       rs1_valid,
-    output logic       rs2_valid
+    output logic       rs2_valid,
+    // Unsupported / reserved encoding (becomes the illegal-instruction trap cause)
+    output logic       illegal
 );
+
+    // ---- Illegal / unsupported encoding decode ----
+    always_comb begin
+        case (opcode)
+            7'b0110011: // OP: only funct7 0000000, or 0100000 for SUB/SRA
+                illegal = !((funct7 == 7'b0000000) ||
+                            (funct7 == 7'b0100000 && (funct3 == 3'b000 || funct3 == 3'b101)));
+            7'b0010011: // OP-IMM: shift-immediates constrain funct7
+                case (funct3)
+                    3'b001:  illegal = (funct7 != 7'b0000000);                            // SLLI
+                    3'b101:  illegal = (funct7 != 7'b0000000) && (funct7 != 7'b0100000);  // SRLI/SRAI
+                    default: illegal = 1'b0;
+                endcase
+            7'b0000011: illegal = (funct3 == 3'b011) || (funct3[2:1] == 2'b11);  // LOAD: no LD/LWU/...
+            7'b0100011: illegal = (funct3 == 3'b011) || funct3[2];               // STORE: SB/SH/SW only
+            7'b1100011: illegal = (funct3[2:1] == 2'b01);                         // BRANCH: 010/011
+            7'b1100111: illegal = (funct3 != 3'b000);                             // JALR
+            7'b0110111,                                                           // LUI
+            7'b0010111,                                                           // AUIPC
+            7'b1101111: illegal = 1'b0;                                           // JAL
+            7'b0001111: illegal = (funct3 != 3'b000);   // FENCE ok; FENCE.I (Zifencei) not implemented
+            7'b0001011: illegal = (funct7 != 7'b0000000) || (funct3 == 3'b010) || (funct3 == 3'b111);
+            default:    illegal = 1'b1;                 // SYSTEM, unknown, compressed, all-zero
+        endcase
+    end
 
     always_comb begin
         // Deterministic default assignments to prevent latches
@@ -166,6 +200,23 @@ module control_unit_pipe (
 
             default: ;
         endcase
+
+        // An illegal encoding is a bubble: no register, memory, branch or MAC effect.
+        if (illegal) begin
+            reg_write      = 1'b0;
+            mem_read       = 1'b0;
+            mem_write      = 1'b0;
+            mem_to_reg     = 1'b0;
+            branch         = 1'b0;
+            jump           = 1'b0;
+            pc_to_reg      = 1'b0;
+            is_mac         = 1'b0;
+            is_mac_clear   = 1'b0;
+            mac_to_reg     = 1'b0;
+            is_mac_rdshift = 1'b0;
+            rs1_valid      = 1'b0;
+            rs2_valid      = 1'b0;
+        end
     end
 
 endmodule

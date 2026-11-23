@@ -54,6 +54,16 @@ end_signature:
     .set    expected_dbus_errors, \count
 .endm
 
+// Declare intentional illegal-instruction / misaligned-access errors (default 0).
+.macro EXPECT_ILLEGAL count
+    .globl  expected_illegal_errors
+    .set    expected_illegal_errors, \count
+.endm
+.macro EXPECT_MISALIGNED count
+    .globl  expected_misaligned_errors
+    .set    expected_misaligned_errors, \count
+.endm
+
 // Hold every TCM store in EX for `cycles` cycles in this test (harness hook,
 // +HOLD_EX_STORES). Takes precedence over a regression-wide HOLD=<n>.
 .macro HOLD_EX_STORES cycles

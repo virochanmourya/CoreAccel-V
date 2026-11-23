@@ -52,6 +52,7 @@ module cpu_pipeline_top #(
     logic        id_is_mac, id_is_mac_clear, id_mac_to_reg, id_is_mac_rdshift;
     logic [1:0]  id_mac_rd_op;
     logic        id_rs1_valid, id_rs2_valid;
+    logic        id_illegal, id_ex_illegal;
 
     // ---- ID Stage: Data ----
     logic [31:0] id_imm, rf_read_data1, rf_read_data2, id_rs1_data, id_rs2_data;
@@ -98,7 +99,15 @@ module cpu_pipeline_top #(
     logic        is_periph_mapped; // A defined register inside the peripheral page
     logic        is_tohost; // 0xC000_0FFC: reserved simulation halt (writes ignored)
     logic        mem_access; // Load or store in MEM
-    logic        dbus_error; // Load/store to an unmapped address (stub; trap later)
+    // ---- Trap-cause stubs: error pulses, one per offending instruction ----
+    // Not consumed by any logic yet; they become trap causes when Zicsr and
+    // traps are added (the testbench counts them per test).
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic        dbus_error;       // MEM: load/store to an unmapped address
+    logic        illegal_insn_err; // EX:  unsupported / reserved encoding
+    logic        misaligned_err;   // EX:  misaligned LW/SW/LH/SH (access squashed)
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic        ex_misaligned;    // EX:  load/store address not naturally aligned
 
     // ---- I2C GPIO MMIO (0xC000_0000) ----
     logic        is_i2c_access; // GPIO register 0xC0000000
@@ -237,7 +246,8 @@ module cpu_pipeline_top #(
         .mac_rd_op      (id_mac_rd_op),
         .is_mac_rdshift (id_is_mac_rdshift),
         .rs1_valid      (id_rs1_valid),
-        .rs2_valid      (id_rs2_valid)
+        .rs2_valid      (id_rs2_valid),
+        .illegal        (id_illegal)
     );
 
     imm_gen_pipe u_imm_gen (
@@ -321,7 +331,9 @@ module cpu_pipeline_top #(
         // funct3
         .funct3_in       (id_funct3),       .funct3_out      (id_ex_funct3),
         // Operand refresh while EX is held (see id_ex_reg)
-        .rs1_fwd_in      (forwarded_a),     .rs2_fwd_in      (forwarded_b)
+        .rs1_fwd_in      (forwarded_a),     .rs2_fwd_in      (forwarded_b),
+        // Illegal-instruction flag
+        .illegal_in      (id_illegal),      .illegal_out     (id_ex_illegal)
     );
 
     // ========================================================================
@@ -411,7 +423,7 @@ module cpu_pipeline_top #(
     assign ex_eff_addr   = forwarded_a + id_ex_imm;
     assign ex_is_tcm     = (ex_eff_addr[31:12] == 20'h80000);
     assign ex_hold       = id_ex_stall;
-    assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_hold}};
+    assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ~ex_hold}};
     assign cpu_tcm_addr  = ex_eff_addr[11:2];
     assign cpu_tcm_wdata = ex_store_data;
 
@@ -421,6 +433,18 @@ module cpu_pipeline_top #(
     // SB to the UART sends rs2[7:0]. Misaligned SH/SW are not trapped yet:
     // addr[0] (SH) / addr[1:0] (SW) are ignored.
     assign ex_addr_lo = ex_eff_addr[1:0];
+
+    // ---- Misaligned LW/SW/LH/SH: detected in EX, access squashed ----
+    // A misaligned access has no architectural effect: no TCM write, and its
+    // EX/MEM memory and register-write controls are cleared, so it reaches
+    // neither a peripheral nor the register file (nor raises dbus_error).
+    assign ex_misaligned = (id_ex_mem_read | id_ex_mem_write) &
+                           (((id_ex_funct3[1:0] == 2'b10) & (ex_addr_lo != 2'b00)) |  // LW/SW
+                            ((id_ex_funct3[1:0] == 2'b01) &  ex_addr_lo[0]));         // LH/LHU/SH
+
+    // Error pulses: once per instruction, on the cycle it leaves EX.
+    assign misaligned_err   = ex_misaligned & ~ex_hold;
+    assign illegal_insn_err = id_ex_illegal & ~ex_hold;
 
     always_comb begin
         case (id_ex_funct3[1:0])
@@ -528,10 +552,10 @@ module cpu_pipeline_top #(
         .clk             (clk),
         .reset           (reset),
         .flush           (ex_mem_flush_sig),
-        .reg_write_in    (id_ex_reg_write),  .reg_write_out  (ex_mem_reg_write),
+        .reg_write_in    (id_ex_reg_write & ~ex_misaligned), .reg_write_out (ex_mem_reg_write),
         .mem_to_reg_in   (id_ex_mem_to_reg), .mem_to_reg_out (ex_mem_mem_to_reg),
-        .mem_read_in     (id_ex_mem_read),   .mem_read_out   (ex_mem_mem_read),
-        .mem_write_in    (id_ex_mem_write),  .mem_write_out  (ex_mem_mem_write),
+        .mem_read_in     (id_ex_mem_read  & ~ex_misaligned), .mem_read_out  (ex_mem_mem_read),
+        .mem_write_in    (id_ex_mem_write & ~ex_misaligned), .mem_write_out (ex_mem_mem_write),
         .alu_result_in   (ex_stage_result),  .alu_result_out (ex_mem_alu_result),
         .rs2_data_in     (ex_store_data),    .rs2_data_out   (ex_mem_rs2_data),
         .rd_addr_in      (id_ex_rd_addr),    .rd_addr_out    (ex_mem_rd_addr),
