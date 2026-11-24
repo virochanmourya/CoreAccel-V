@@ -39,7 +39,16 @@ module core_sva (
     input logic        id_ctrl_any,     // OR of every ID control output
     input logic        id_exc,
     input logic        id_ex_valid,
-    input logic        id_ex_ctrl_any   // OR of every ID/EX control bit
+    input logic        id_ex_ctrl_any,  // OR of every ID/EX control bit
+    // Forwarding: registered selects vs the combinational definition
+    input logic [1:0]  forward_a_sel,
+    input logic [1:0]  forward_b_sel,
+    input logic [4:0]  id_ex_rs1_addr,
+    input logic [4:0]  id_ex_rs2_addr,
+    input logic [4:0]  ex_mem_rd_addr,
+    input logic        ex_mem_reg_write,
+    input logic [4:0]  mem_wb_rd_addr,
+    input logic        mem_wb_reg_write
 );
     logic mem_tcm_store;
     // Same exact range as the EX-stage TCM write enable (0x8000_0000-0x8000_0FFF).
@@ -120,6 +129,34 @@ module core_sva (
         tb_top.sva_fail();
     end
 
+    // Forwarding selects: the registered (one cycle early) selects must equal
+    // the combinational EX-stage definition whenever the EX instruction is
+    // valid and not killed by a trap/MRET in MEM.
+    // Everything is passed as an argument: in an assertion only the
+    // arguments of a function call are sampled, not signals it reads itself.
+    function automatic logic [1:0] fwd_ref(input logic [4:0] rs,
+                                           input logic ex_wr, input logic [4:0] ex_rd,
+                                           input logic wb_wr, input logic [4:0] wb_rd);
+        if (ex_wr && (ex_rd != 5'd0) && (ex_rd == rs))
+            return 2'b10;
+        else if (wb_wr && (wb_rd != 5'd0) && (wb_rd == rs))
+            return 2'b01;
+        return 2'b00;
+    endfunction
+    logic [1:0] ref_a, ref_b;
+    assign ref_a = fwd_ref(id_ex_rs1_addr, ex_mem_reg_write, ex_mem_rd_addr, mem_wb_reg_write, mem_wb_rd_addr);
+    assign ref_b = fwd_ref(id_ex_rs2_addr, ex_mem_reg_write, ex_mem_rd_addr, mem_wb_reg_write, mem_wb_rd_addr);
+    a_fwd_sel_matches: assert property (
+        @(posedge clk) disable iff (reset)
+        (id_ex_valid && !ex_kill) |->
+            (forward_a_sel == ref_a && forward_b_sel == ref_b)
+    ) else begin
+        $display("SVA FAIL a_fwd_sel_matches t=%0t a=%b/%b b=%b/%b", $time,
+                 $sampled(forward_a_sel), $sampled(ref_a),
+                 $sampled(forward_b_sel), $sampled(ref_b));
+        tb_top.sva_fail();
+    end
+
     // A bubble in ID decodes to all-zero controls and raises no exception,
     // whatever stale instruction bits IF/ID holds.
     a_id_bubble_quiet: assert property (
@@ -175,5 +212,13 @@ bind cpu_pipeline_top core_sva u_core_sva (
     .id_ex_ctrl_any    (id_ex_reg_write | id_ex_mem_to_reg | id_ex_mem_read | id_ex_mem_write |
                         id_ex_branch | id_ex_jump | id_ex_pc_to_reg | is_mac_ex | is_mac_clear_ex |
                         mac_to_reg_ex | is_mac_rdshift_ex | is_muldiv_ex | is_csr_ex |
-                        csr_we_ex | id_ex_exc | id_ex_is_mret)
+                        csr_we_ex | id_ex_exc | id_ex_is_mret),
+    .forward_a_sel     (forward_a_sel),
+    .forward_b_sel     (forward_b_sel),
+    .id_ex_rs1_addr    (id_ex_rs1_addr),
+    .id_ex_rs2_addr    (id_ex_rs2_addr),
+    .ex_mem_rd_addr    (ex_mem_rd_addr),
+    .ex_mem_reg_write  (ex_mem_reg_write),
+    .mem_wb_rd_addr    (mem_wb_rd_addr),
+    .mem_wb_reg_write  (mem_wb_reg_write)
 );

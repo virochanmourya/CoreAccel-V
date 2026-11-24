@@ -465,13 +465,19 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     // ---- Forwarding Unit ----
+    // Registered selects, computed in the previous cycle (see forwarding_unit).
     forwarding_unit u_forward (
+        .clk              (clk),
+        .reset            (reset),
+        .hold             (ex_hold),
+        .id_rs1           (id_rs1),
+        .id_rs2           (id_rs2),
         .id_ex_rs1        (id_ex_rs1_addr),
         .id_ex_rs2        (id_ex_rs2_addr),
+        .id_ex_rd         (id_ex_rd_addr),
+        .id_ex_reg_write  (id_ex_reg_write),
         .ex_mem_rd        (ex_mem_rd_addr),
         .ex_mem_reg_write (ex_mem_reg_write),
-        .mem_wb_rd        (mem_wb_rd_addr),
-        .mem_wb_reg_write (mem_wb_reg_write),
         .forward_a        (forward_a_sel),
         .forward_b        (forward_b_sel)
     );
