@@ -3,6 +3,9 @@
 // File        : mem_wb_reg.sv
 // Description : MEM/WB pipeline register. Latches data and control signals
 //               between the Memory (MEM) and Write Back (WB) stages.
+//               The write-back value is selected in MEM (load data or the
+//               EX result) and registered here as one word, so WB and the
+//               forwarding / WB->ID bypass paths start at a flop.
 // ============================================================================
 
 module mem_wb_reg (
@@ -11,15 +14,11 @@ module mem_wb_reg (
 
     // WB control signals
     input  logic        reg_write_in,
-    input  logic        mem_to_reg_in,
     output logic        reg_write_out,
-    output logic        mem_to_reg_out,
 
-    // Data
-    input  logic [31:0] mem_data_in,
-    input  logic [31:0] alu_result_in,
-    output logic [31:0] mem_data_out,
-    output logic [31:0] alu_result_out,
+    // Write-back value (selected in MEM)
+    input  logic [31:0] result_in,
+    output logic [31:0] result_out,
 
     // Destination register address
     input  logic [4:0]  rd_addr_in,
@@ -33,17 +32,13 @@ module mem_wb_reg (
         if (reset) begin
             valid_out <= 1'b0;
             reg_write_out   <= 1'b0;
-            mem_to_reg_out  <= 1'b0;
-            mem_data_out    <= 32'd0;
-            alu_result_out  <= 32'd0;
+            result_out      <= 32'd0;
             rd_addr_out     <= 5'd0;
         end
         else begin
             valid_out <= valid_in;
             reg_write_out   <= reg_write_in;
-            mem_to_reg_out  <= mem_to_reg_in;
-            mem_data_out    <= mem_data_in;
-            alu_result_out  <= alu_result_in;
+            result_out      <= result_in;
             rd_addr_out     <= rd_addr_in;
         end
     end

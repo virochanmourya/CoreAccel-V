@@ -97,6 +97,7 @@ module cpu_pipeline_top #(
     logic        is_tcm_access; // MEM decode: 0x8000_0000..0x8000_0FFF
     logic [31:0] mem_read_data_muxed; // Muxed read word (TCM / peripheral / 0)
     logic [31:0] mem_load_data; // Load result after byte/half select and extend
+    logic [31:0] mem_result;    // MEM: write-back value (load data or EX result)
     logic [2:0]  ex_mem_funct3; // Load/store width in MEM
 
     // ---- Data-bus decode / unmapped-access fault ----
@@ -221,8 +222,8 @@ module cpu_pipeline_top #(
     // ---- MEM Stage (read data handled by address decoder below) ----
 
     // ---- MEM/WB Register Outputs ----
-    logic        mem_wb_reg_write, mem_wb_mem_to_reg;
-    logic [31:0] mem_wb_mem_data, mem_wb_alu_result;
+    logic        mem_wb_reg_write;
+    logic [31:0] mem_wb_result;      // write-back value, selected in MEM
     logic [4:0]  mem_wb_rd_addr;
 
     // ---- WB Stage ----
@@ -992,6 +993,11 @@ module cpu_pipeline_top #(
         endcase
     end
 
+    // ---- Write-back select, done in MEM ----
+    // One registered result, so the WB mux is not between the MEM/WB flops
+    // and the forwarding muxes (Phase 5b limiter: mem_to_reg fanout).
+    assign mem_result = ex_mem_mem_to_reg ? mem_load_data : ex_mem_alu_result;
+
     // ========================================================================
     //  MEM/WB Pipeline Register
     // ========================================================================
@@ -1000,9 +1006,7 @@ module cpu_pipeline_top #(
         .clk             (clk),
         .reset           (reset),
         .reg_write_in    (ex_mem_reg_write & ~mem_trap), .reg_write_out (mem_wb_reg_write),  // a faulting load writes no rd
-        .mem_to_reg_in   (ex_mem_mem_to_reg), .mem_to_reg_out (mem_wb_mem_to_reg),
-        .mem_data_in     (mem_load_data),    .mem_data_out   (mem_wb_mem_data),
-        .alu_result_in   (ex_mem_alu_result),  .alu_result_out (mem_wb_alu_result),
+        .result_in       (mem_result),         .result_out    (mem_wb_result),
         .rd_addr_in      (ex_mem_rd_addr),     .rd_addr_out    (mem_wb_rd_addr),
         .valid_in        (ex_mem_valid & ~mem_trap), .valid_out (mem_wb_valid)  // a trapping instruction does not retire
     );
@@ -1011,7 +1015,7 @@ module cpu_pipeline_top #(
     //  WB STAGE
     // ========================================================================
 
-    assign wb_data = mem_wb_mem_to_reg ? mem_wb_mem_data : mem_wb_alu_result;
+    assign wb_data = mem_wb_result;
 
     // ========================================================================
     //  DEBUG OUTPUTS
