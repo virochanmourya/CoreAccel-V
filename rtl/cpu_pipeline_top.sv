@@ -5,8 +5,12 @@
 // ============================================================================
 
 module cpu_pipeline_top #(
-    parameter IMEM_INIT = "imem.hex",   // $readmemh image for IMEM (.text)
-    parameter TCM_INIT  = "tcm.hex"     // $readmemh image for TCM (.rodata/.data)
+    parameter IMEM_INIT  = "imem.hex",  // $readmemh image for IMEM (.text)
+    parameter TCM_INIT   = "tcm.hex",   // $readmemh image for TCM (.rodata/.data)
+    // Memories are reached only through imem_wrap / tcm_wrap.
+    parameter string MEM_TECH   = "FPGA",  // "FPGA" (LUT-ROM / BRAM) or "ASIC" (macro slot)
+    parameter int    IMEM_WORDS = 2048,    // 8 KB at 0x0000_0000 (power of two)
+    parameter int    TCM_WORDS  = 1024     // 4 KB at 0x8000_0000 (power of two)
 )(
     input  logic       clk,
     input  logic       reset,
@@ -31,6 +35,10 @@ module cpu_pipeline_top #(
     // ========================================================================
     // Signal Declarations
     // ========================================================================
+
+    localparam int          IMEM_AW  = $clog2(IMEM_WORDS);  // IMEM word-address bits
+    localparam int          TCM_AW   = $clog2(TCM_WORDS);   // TCM word-address bits
+    localparam logic [31:0] TCM_BASE = 32'h8000_0000;
 
     // ---- IF Stage ----
     logic [31:0] pc_current, if_instruction;
@@ -79,7 +87,7 @@ module cpu_pipeline_top #(
 
     // ---- TCM (Tightly Coupled Memory) ----
     logic [3:0]  tcm_wea; // Port A byte write enables
-    logic [9:0]  tcm_addra; // Port A address (1024 words)
+    logic [TCM_AW-1:0] tcm_addra; // Port A word address
     logic [31:0] tcm_dina; // Port A write data
     logic [31:0] tcm_douta; // Port A read data
     logic [31:0] ex_eff_addr; // AGU: load/store effective address rs1 + imm
@@ -90,11 +98,11 @@ module cpu_pipeline_top #(
     logic [1:0]  ex_addr_lo; // Effective address [1:0]
     logic [3:0]  ex_store_be; // Store byte lanes for SB/SH/SW
     logic [31:0] ex_store_data; // Store data replicated into its lane(s)
-    logic [9:0]  cpu_tcm_addr; // CPU port-A request: word address (from EX)
+    logic [TCM_AW-1:0] cpu_tcm_addr; // CPU port-A request: word address (from EX)
     logic [31:0] cpu_tcm_wdata; // CPU port-A request: write data (lane-replicated rs2)
-    logic [9:0]  tcm_addrb; // Port B address (MAC weight read)
+    logic [TCM_AW-1:0] tcm_addrb; // Port B address (MAC weight read)
     logic [31:0] tcm_doutb; // Port B read data → MAC tcm_data
-    logic        is_tcm_access; // MEM decode: 0x8000_0000..0x8000_0FFF
+    logic        is_tcm_access; // MEM decode: TCM_BASE .. TCM_BASE + 4*TCM_WORDS - 1
     logic [31:0] mem_read_data_muxed; // Muxed read word (TCM / peripheral / 0)
     logic [31:0] mem_load_data; // Load result after byte/half select and extend
     logic [31:0] mem_result;    // MEM: write-back value (load data or EX result)
@@ -273,13 +281,17 @@ module cpu_pipeline_top #(
         .pc_out    (pc_current)
     );
 
-    // Instruction access fault: the IMEM is 8 KB at 0x0000_0000; a PC
-    // outside it fetches nothing valid (the instruction is squashed in ID
-    // and traps with cause 1 if it reaches MEM).
-    assign if_fetch_fault = (pc_current[31:13] != 19'd0);
+    // Instruction access fault: the IMEM is 4*IMEM_WORDS bytes at
+    // 0x0000_0000; a PC outside it fetches nothing valid (the instruction
+    // is squashed in ID and traps with cause 1 if it reaches MEM).
+    assign if_fetch_fault = (pc_current[31:IMEM_AW+2] != '0);
 
-    instruction_memory_pipe #(.INIT_FILE(IMEM_INIT)) u_imem (
-        .word_addr   (pc_current[12:2]),
+    imem_wrap #(
+        .MEM_TECH  (MEM_TECH),
+        .WORDS     (IMEM_WORDS),
+        .INIT_FILE (IMEM_INIT)
+    ) u_imem (
+        .word_addr   (pc_current[IMEM_AW+1:2]),
         .instruction (if_instruction)
     );
 
@@ -563,9 +575,9 @@ module cpu_pipeline_top #(
     // The write enable is gated with the exact TCM range, so a store outside
     // 0x8000_0000-0x8000_0FFF writes nothing (it faults in MEM: dbus_error).
     assign ex_eff_addr   = forwarded_a + id_ex_imm;
-    assign ex_is_tcm     = (ex_eff_addr[31:12] == 20'h80000);
+    assign ex_is_tcm     = (ex_eff_addr[31:TCM_AW+2] == TCM_BASE[31:TCM_AW+2]);
     assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ~ex_hold & ~ex_kill}};
-    assign cpu_tcm_addr  = ex_eff_addr[11:2];
+    assign cpu_tcm_addr  = ex_eff_addr[TCM_AW+1:2];
     assign cpu_tcm_wdata = ex_store_data;
 
     // ---- Store width: byte lanes + lane-replicated data (SB/SH/SW) ----
@@ -608,7 +620,7 @@ module cpu_pipeline_top #(
     assign tcm_dina  = cpu_tcm_wdata;
 
     // ---- TCM Port B: MAC Weight Stream (EX stage) ----
-    assign tcm_addrb = forwarded_b[11:2];
+    assign tcm_addrb = forwarded_b[TCM_AW+1:2];
 
     // ---- MAC Unit (TCM-fed) ----
     // No abort input: a branch/jump resolves in EX and a MAC-unit op holds EX
@@ -819,7 +831,7 @@ module cpu_pipeline_top #(
     //   anything else              unmapped -> dbus_error: load/store access fault
     // This decode is exact and runs on the registered EX/MEM address. The TCM
     // write enable uses the same exact range, decoded in EX from the AGU.
-    assign is_tcm_access    = (ex_mem_alu_result[31:12] == 20'h80000);
+    assign is_tcm_access    = (ex_mem_alu_result[31:TCM_AW+2] == TCM_BASE[31:TCM_AW+2]);
     assign is_periph_region = (ex_mem_alu_result[31:12] == 20'hC0000);
     assign is_tohost        = is_periph_region & (ex_mem_alu_result[11:2] == 10'h3FF);
     assign is_periph_page0  = is_periph_region & (ex_mem_alu_result[11:4] == 8'h00);
@@ -838,14 +850,17 @@ module cpu_pipeline_top #(
     assign uart_we        = ex_mem_mem_write &  is_uart_access;
     assign seg_we         = ex_mem_mem_write &  is_seg_access;
 
-    // TCM: True Dual-Port BRAM
-    tcm_ram #(.INIT_FILE(TCM_INIT)) u_tcm (
-        .clka   (clk),
+    // TCM: dual-port memory behind its wrapper
+    tcm_wrap #(
+        .MEM_TECH  (MEM_TECH),
+        .WORDS     (TCM_WORDS),
+        .INIT_FILE (TCM_INIT)
+    ) u_tcm (
+        .clk    (clk),
         .wea    (tcm_wea),
         .addra  (tcm_addra),
         .dina   (tcm_dina),
         .douta  (tcm_douta),
-        .clkb   (clk),
         .addrb  (tcm_addrb),
         .doutb  (tcm_doutb)
     );

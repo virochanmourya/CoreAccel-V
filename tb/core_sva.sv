@@ -4,12 +4,14 @@
 // which forces the test result to FAIL.
 // ============================================================================
 `timescale 1ns/1ps
-module core_sva (
+module core_sva #(
+    parameter int TCM_AW = 10                 // TCM word-address bits
+)(
     input logic        clk,
     input logic        reset,
     // TCM port A (CPU data side, driven from EX)
     input logic [3:0]  tcm_wea,
-    input logic [9:0]  tcm_addra,
+    input logic [TCM_AW-1:0] tcm_addra,
     input logic [31:0] tcm_dina,
     // The same store one cycle later, in MEM
     input logic        ex_mem_mem_write,
@@ -55,8 +57,9 @@ module core_sva (
     input logic        ex_hold
 );
     logic mem_tcm_store;
-    // Same exact range as the EX-stage TCM write enable (0x8000_0000-0x8000_0FFF).
-    assign mem_tcm_store = ex_mem_mem_write & (ex_mem_alu_result[31:12] == 20'h80000);
+    // Same exact range as the EX-stage TCM write enable.
+    assign mem_tcm_store = ex_mem_mem_write &
+                           (ex_mem_alu_result[31:TCM_AW+2] == 32'h8000_0000 >> (TCM_AW + 2));
 
     // ---- One write per store -------------------------------------------
     // A store spends exactly one cycle in MEM. So "every TCM write is followed
@@ -76,7 +79,7 @@ module core_sva (
         // === : this checks the address/data PATH is the same, so an X value
         // stored by the program (e.g. from an undriven input) is not a violation.
         mem_tcm_store |-> ($past(|tcm_wea)
-                           && $past(tcm_addra) === ex_mem_alu_result[11:2]
+                           && $past(tcm_addra) === ex_mem_alu_result[TCM_AW+1:2]
                            && $past(tcm_dina)  === ex_mem_rs2_data)
     ) else begin
         $display("SVA FAIL a_mem_store_written_once t=%0t addr=0x%08h", $time,
@@ -190,7 +193,7 @@ module core_sva (
     end
 endmodule
 
-bind cpu_pipeline_top core_sva u_core_sva (
+bind cpu_pipeline_top core_sva #(.TCM_AW(TCM_AW)) u_core_sva (
     .clk               (clk),
     .reset             (reset),
     .tcm_wea           (tcm_wea),

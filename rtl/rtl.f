@@ -11,6 +11,8 @@ rtl/hazard_detection_unit.sv
 rtl/register_file.sv
 rtl/tcm_ram.sv
 rtl/instruction_memory_pipe.sv
+rtl/tcm_wrap.sv
+rtl/imem_wrap.sv
 rtl/pc_pipe.sv
 rtl/if_id_reg.sv
 rtl/id_ex_reg.sv

@@ -12,15 +12,17 @@
 // ============================================================================
 
 module instruction_memory_pipe #(
-    parameter INIT_FILE = "imem.hex"     // .text image from `make fw`
+    parameter int DEPTH     = 2048,          // 32-bit words (8 KB)
+    parameter     INIT_FILE = "imem.hex",    // .text image from `make fw`
+    localparam int AW       = $clog2(DEPTH)
 )(
-    input  logic [10:0] word_addr,     // PC[12:2]: 2048 x 32-bit words (8 KB)
-    output logic [31:0] instruction
+    input  logic [AW-1:0] word_addr,     // PC[AW+1:2]
+    output logic [31:0]   instruction
 );
-    (* ram_style = "distributed" *) logic [31:0] mem [0:2047];
+    (* ram_style = "distributed" *) logic [31:0] mem [0:DEPTH-1];
 
     initial begin
-        for (int i = 0; i < 2048; i++) mem[i] = 32'h00000013; // NOP
+        for (int i = 0; i < DEPTH; i++) mem[i] = 32'h00000013; // NOP
         $readmemh(INIT_FILE, mem);
     end
 

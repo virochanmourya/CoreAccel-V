@@ -7,8 +7,8 @@
 `define TB_PROBES_SVH
 
 // Backing arrays loaded by the harness
-`define PRB_IMEM_ARR   dut.u_imem.mem
-`define PRB_TCM_ARR    dut.u_tcm.mem
+`define PRB_IMEM_ARR   dut.u_imem.g_fpga.u_rom.mem
+`define PRB_TCM_ARR    dut.u_tcm.g_fpga.u_ram.mem
 
 // Data-side store, observed at the EX/MEM register (squashed stores never get here)
 `define PRB_ST_VALID   dut.ex_mem_mem_write
