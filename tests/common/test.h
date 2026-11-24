@@ -186,6 +186,12 @@ end_signature:
     .globl  test_bus_wait
     .set    test_bus_wait, \cycles
 .endm
+// Make every bus access to \addr hang past the core's bus timeout (harness
+// +BUS_HANG_ADDR): it ends in a load/store access fault.
+.macro BUS_HANG_ADDR addr
+    .globl  test_bus_hang_addr
+    .set    test_bus_hang_addr, \addr
+.endm
 
 // Absolute address of a symbol, no PC-relative arithmetic.
 .macro LA_ABS reg, sym

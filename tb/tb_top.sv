@@ -21,6 +21,9 @@
 //                     the start of each access, or (rand) a random 1-in-3
 //                     chance on every cycle an access is in flight
 //   +BUS_SEED=<n>      seed for BUS_WAIT=rand (default 1)
+//   +BUS_HANG_ADDR=<hex> every bus access to this address is held for
+//                     BUS_HANG_CYCLES (default 400) cycles: longer than the
+//                     core's bus timeout (256), so it ends in an access fault
 //
 // Simulation control word at HALT_ADDR (the RTL ignores writes there):
 //   store 1 -> raise the external interrupt line, store 2 -> drop it,
@@ -166,20 +169,30 @@ module tb_top;
     int    bus_wait_n = 0, bus_seed = 1, bus_waits = 0;
     bit    bus_wait_rand = 1'b0, bus_hook = 1'b0;
     bit    prev_stall = 1'b0;
+    logic [31:0] hang_addr;
+    int    hang_cycles = 400;
+    bit    hang_en = 1'b0;
     initial begin
+        hang_en = $value$plusargs("BUS_HANG_ADDR=%h", hang_addr);
+        if (!$value$plusargs("BUS_HANG_CYCLES=%d", hang_cycles)) hang_cycles = 400;
         if ($value$plusargs("BUS_WAIT=%s", bus_wait_arg)) begin
             if (bus_wait_arg == "rand") bus_wait_rand = 1'b1;
             else                        bus_wait_n = bus_wait_arg.atoi();
         end
         if (!$value$plusargs("BUS_SEED=%d", bus_seed)) bus_seed = 1;
         process::self().srandom(bus_seed);
-        bus_hook = bus_wait_rand || bus_wait_n > 0;
+        bus_hook = bus_wait_rand || bus_wait_n > 0 || hang_en;
         force `PRB_BUS_WAIT = 1'b0;
         if (bus_hook) begin
             forever begin
                 @(posedge clk); #1;
                 if (!reset && !halted && `PRB_BUS_BUSY) begin
-                    if (bus_wait_rand) begin
+                    if (hang_en && !prev_stall && `PRB_BUS_ADDR == hang_addr) begin
+                        force `PRB_BUS_WAIT = 1'b1;
+                        repeat (hang_cycles) @(posedge clk);
+                        #1 force `PRB_BUS_WAIT = 1'b0;
+                        bus_waits += hang_cycles;
+                    end else if (bus_wait_rand) begin
                         if ($urandom_range(2) == 0) begin
                             force `PRB_BUS_WAIT = 1'b1;
                             bus_waits++;

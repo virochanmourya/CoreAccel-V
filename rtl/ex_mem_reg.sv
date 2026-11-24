@@ -34,6 +34,9 @@ module ex_mem_reg (
     input  logic [31:0] rs2_data_in,
     output logic [31:0] alu_result_out,
     output logic [31:0] rs2_data_out,
+    // Store byte lanes (bus WSTRB)
+    input  logic [3:0]  strb_in,
+    output logic [3:0]  strb_out,
 
     // Destination register address
     input  logic [4:0]  rd_addr_in,
@@ -76,6 +79,7 @@ module ex_mem_reg (
             mem_write_out   <= 1'b0;
             alu_result_out  <= 32'd0;
             rs2_data_out    <= 32'd0;
+            strb_out        <= 4'd0;
             rd_addr_out     <= 5'd0;
             funct3_out      <= 3'd0;
         end
@@ -92,6 +96,7 @@ module ex_mem_reg (
             mem_write_out   <= mem_write_in;
             alu_result_out  <= alu_result_in;
             rs2_data_out    <= rs2_data_in;
+            strb_out        <= strb_in;
             rd_addr_out     <= rd_addr_in;
             funct3_out      <= funct3_in;
         end

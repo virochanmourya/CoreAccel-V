@@ -10,7 +10,10 @@ module cpu_pipeline_top #(
     // Memories are reached only through imem_wrap / tcm_wrap.
     parameter string MEM_TECH   = "FPGA",  // "FPGA" (LUT-ROM / BRAM) or "ASIC" (macro slot)
     parameter int    IMEM_WORDS = 2048,    // 8 KB at 0x0000_0000 (power of two)
-    parameter int    TCM_WORDS  = 1024     // 4 KB at 0x8000_0000 (power of two)
+    parameter int    TCM_WORDS  = 1024,    // 4 KB at 0x8000_0000 (power of two)
+    parameter int    CLK_FREQ   = 100_000_000,
+    parameter bit    SEG_EN     = 1'b1,    // 7-segment controller (FPGA board only)
+    parameter int    BUS_TIMEOUT = 256     // cycles before a bus access faults
 )(
     input  logic       clk,
     input  logic       reset,
@@ -111,7 +114,6 @@ module cpu_pipeline_top #(
     // ---- Data-bus decode / unmapped-access fault ----
     logic        is_periph_region; // MEM decode: 0xC000_0000..0xC000_0FFF
     logic        is_tohost; // 0xC000_0FFC: reserved simulation halt (writes ignored)
-    logic        is_periph_page0; // 0xC000_0000..0xC000_000F: GPIO / UART / 7-seg
     logic        is_timer;  // 0xC000_0100..0xC000_010F: mtime / mtimecmp
     logic        timer_we;
     logic [31:0] timer_rdata;
@@ -132,32 +134,26 @@ module cpu_pipeline_top #(
     // Test hook, tied to 0: the testbench forces it to add bus wait states
     // (+BUS_WAIT). Nothing but the bus response path reads it.
     logic        bus_wait_inj;
-    // ---- Unmapped data access (MEM): load/store access fault ----
-    // Traps in MEM (cause 5 load / 7 store, mtval = address): rd is not
-    // written and no peripheral or TCM write happens.
-    logic        dbus_error;       // MEM: load/store to an unmapped address
+    // ---- Bus error (MEM): load/store access fault ----
+    // A bus access answered with SLVERR/DECERR or timed out traps in MEM in
+    // its response cycle (cause 5 load / 7 store, mtval = address): rd is
+    // not written. (A store's slave rejected it, so it had no effect.)
+    logic        dbus_error;       // MEM: the bus access ends with an error
     logic        ex_misaligned;    // EX:  load/store address not naturally aligned
 
-    // ---- I2C GPIO MMIO (0xC000_0000) ----
-    logic        is_i2c_access; // GPIO register 0xC0000000
-    logic        is_uart_access; // UART register 0xC0000004
-    logic        gpio_we; // I2C GPIO register write enable
-    logic [1:0]  gpio_out_reg; // {SDA, SCL} output latch
-    logic [31:0] gpio_rdata; // Peripheral read-back data to CPU
-    logic        scl_pin_in; // Synchronised SCL pin state
-    logic        sda_pin_in; // Synchronised SDA pin state
-    logic        scl_pad_in, sda_pad_in; // Raw pad levels (asynchronous)
-    (* ASYNC_REG = "TRUE" *) logic [1:0] i2c_sync1, i2c_sync2; // {SDA, SCL} 2-FF synchroniser
+    logic        scl_pad_in, sda_pad_in;     // raw pad levels (asynchronous)
+    logic        scl_drive_low, sda_drive_low;
+    logic [3:0]  ex_mem_strb;                // store byte lanes in MEM (AXI WSTRB)
 
-    // ---- UART TX MMIO (0xC000_0004) ----
-    logic        uart_we; // UART TX trigger write enable
-    logic        uart_tx_valid; // 1-cycle pulse to start TX
-    logic        uart_tx_busy; // HIGH while byte is in transit
-
-    // ---- 7-Segment Display MMIO (0xC000_0008) ----
-    logic        is_seg_access; // 7-seg register 0xC0000008
-    logic        seg_we; // 7-seg register write enable
-    logic [15:0] seg_display_data; // Latched 16-bit display value (4 BCD digits)
+    // ---- AXI4 data-bus master port (MEM) ----
+    logic        axi_awvalid, axi_awready, axi_wvalid, axi_wready, axi_wlast;
+    logic        axi_bvalid, axi_bready, axi_arvalid, axi_arready;
+    logic        axi_rvalid, axi_rready, axi_rlast;
+    logic [31:0] axi_awaddr, axi_wdata, axi_araddr, axi_rdata;
+    logic [7:0]  axi_awlen, axi_arlen;
+    logic [2:0]  axi_awsize, axi_awprot, axi_arsize, axi_arprot;
+    logic [1:0]  axi_awburst, axi_arburst, axi_bresp, axi_rresp;
+    logic [3:0]  axi_awid, axi_wstrb, axi_bid, axi_arid, axi_rid;
 
     logic [31:0] alu_in1_final, alu_input_b, alu_result;
     logic        branch_taken, pc_redirect;
@@ -817,6 +813,7 @@ module cpu_pipeline_top #(
         .mem_write_in    (id_ex_mem_write & ~ex_misaligned), .mem_write_out (ex_mem_mem_write),
         .alu_result_in   (ex_stage_result),  .alu_result_out (ex_mem_alu_result),
         .rs2_data_in     (ex_store_data),    .rs2_data_out   (ex_mem_rs2_data),
+        .strb_in         (ex_store_be),      .strb_out       (ex_mem_strb),
         .rd_addr_in      (id_ex_rd_addr),    .rd_addr_out    (ex_mem_rd_addr),
         .funct3_in       (id_ex_funct3),     .funct3_out     (ex_mem_funct3),
         .valid_in        (id_ex_valid),      .valid_out      (ex_mem_valid),
@@ -852,21 +849,18 @@ module cpu_pipeline_top #(
     //  MEM STAGE — Address Decoder & Memory Subsystems
     // ========================================================================
     // Data-side memory map (Harvard; IMEM is not reachable from the data bus):
-    //   0x8000_0000 - 0x8000_0FFF  TCM (4 KB): .rodata, .data, .bss, stack
-    //   0xC000_0000                GPIO {SDA,SCL} out / pin in
-    //   0xC000_0004                UART TX data / busy
-    //   0xC000_0008                7-segment data
-    //   0xC000_000C                GPIO output latch (read-only debug)
-    //   0xC000_0100 / 0x104        mtime lo / hi
-    //   0xC000_0108 / 0x10C        mtimecmp lo / hi
-    //   0xC000_0FFC                reserved: simulation halt ("tohost")
-    //   anything else              unmapped -> dbus_error: load/store access fault
+    //   0x8000_0000 - 0x8000_0FFF  TCM (4 KB): .rodata, .data, .bss, stack (EX fast path)
+    //   0xC000_0100 / 0x104        mtime lo / hi           (core-local)
+    //   0xC000_0108 / 0x10C        mtimecmp lo / hi        (core-local)
+    //   0xC000_0FFC                simulation halt "tohost" (core-local, writes ignored)
+    //   anything else              AXI4 data bus (periph_subsys): peripherals on
+    //                              APB, holes -> DECERR; an error response or a
+    //                              timeout is a load/store access fault
     // This decode is exact and runs on the registered EX/MEM address. The TCM
     // write enable uses the same exact range, decoded in EX from the AGU.
     assign is_tcm_access    = (ex_mem_alu_result[31:TCM_AW+2] == TCM_BASE[31:TCM_AW+2]);
     assign is_periph_region = (ex_mem_alu_result[31:12] == 20'hC0000);
     assign is_tohost        = is_periph_region & (ex_mem_alu_result[11:2] == 10'h3FF);
-    assign is_periph_page0  = is_periph_region & (ex_mem_alu_result[11:4] == 8'h00);
     assign is_timer         = is_periph_region & (ex_mem_alu_result[11:4] == 8'h10);
 
     assign mem_access     = ex_mem_mem_read | ex_mem_mem_write;
@@ -875,22 +869,72 @@ module cpu_pipeline_top #(
     assign mem_stall      = mem_is_bus & ~bus_rsp_done;
     assign dbus_error     = mem_is_bus & bus_rsp_done & bus_rsp_err;
 
-    // ---- Data bus (step 1: local responder for the peripheral page) ----
-    // The peripheral page answers in the access's first MEM cycle unless
-    // the test hook adds wait states; anything else on the bus is an error.
-    assign bus_wait_inj  = 1'b0;
-    assign bus_rsp_done  = mem_is_bus & ~bus_wait_inj;
-    assign bus_rsp_err   = ~is_periph_page0;
-    assign bus_rsp_rdata = gpio_rdata;
+    // ---- AXI4 master: one access per bus instruction ----
+    // The request is captured when the access first appears in MEM; the
+    // response comes back registered (bus_rsp_done pulses once), so the
+    // stall never depends on an AXI handshake combinationally.
+    assign bus_wait_inj = 1'b0;
+    assign timer_we     = ex_mem_mem_write & is_timer;
 
-    // ---- Peripheral Sub-Decode (0xC000_000x page) ----
-    assign is_i2c_access  = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b00);
-    assign is_uart_access = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b01);
-    assign is_seg_access  = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b10);
-    assign timer_we       = ex_mem_mem_write & is_timer;
-    assign gpio_we        = ex_mem_mem_write &  is_i2c_access  & bus_rsp_done;
-    assign uart_we        = ex_mem_mem_write &  is_uart_access & bus_rsp_done;
-    assign seg_we         = ex_mem_mem_write &  is_seg_access  & bus_rsp_done;
+    dbus_axi_master #(.TIMEOUT(BUS_TIMEOUT)) u_dbus (
+        .clk       (clk),
+        .reset     (reset),
+        .req       (mem_is_bus),
+        .req_write (ex_mem_mem_write),
+        .req_addr  (ex_mem_alu_result),
+        .req_wdata (ex_mem_rs2_data),
+        .req_strb  (ex_mem_mem_write ? ex_mem_strb : 4'b0000),
+        .req_size  ({1'b0, ex_mem_funct3[1:0]}),
+        .rsp_done  (bus_rsp_done),
+        .rsp_err   (bus_rsp_err),
+        .rsp_rdata (bus_rsp_rdata),
+        .m_awvalid (axi_awvalid), .m_awready (axi_awready), .m_awaddr (axi_awaddr),
+        .m_awlen   (axi_awlen),   .m_awsize  (axi_awsize),  .m_awburst (axi_awburst),
+        .m_awprot  (axi_awprot),  .m_awid    (axi_awid),
+        .m_wvalid  (axi_wvalid),  .m_wready  (axi_wready),  .m_wdata   (axi_wdata),
+        .m_wstrb   (axi_wstrb),   .m_wlast   (axi_wlast),
+        .m_bvalid  (axi_bvalid),  .m_bready  (axi_bready),  .m_bresp   (axi_bresp),
+        .m_bid     (axi_bid),
+        .m_arvalid (axi_arvalid), .m_arready (axi_arready), .m_araddr  (axi_araddr),
+        .m_arlen   (axi_arlen),   .m_arsize  (axi_arsize),  .m_arburst (axi_arburst),
+        .m_arprot  (axi_arprot),  .m_arid    (axi_arid),
+        .m_rvalid  (axi_rvalid),  .m_rready  (axi_rready),  .m_rdata   (axi_rdata),
+        .m_rresp   (axi_rresp),   .m_rlast   (axi_rlast),   .m_rid     (axi_rid)
+    );
+
+    periph_subsys #(
+        .CLK_FREQ  (CLK_FREQ),
+        .BAUD_RATE (115_200),
+        .SEG_EN    (SEG_EN)
+    ) u_periph (
+        .clk       (clk),
+        .reset     (reset),
+        .wait_inj  (bus_wait_inj),
+        .s_awvalid (axi_awvalid), .s_awready (axi_awready), .s_awaddr (axi_awaddr),
+        .s_awlen   (axi_awlen),   .s_awsize  (axi_awsize),  .s_awburst (axi_awburst),
+        .s_awprot  (axi_awprot),  .s_awid    (axi_awid),
+        .s_wvalid  (axi_wvalid),  .s_wready  (axi_wready),  .s_wdata   (axi_wdata),
+        .s_wstrb   (axi_wstrb),   .s_wlast   (axi_wlast),
+        .s_bvalid  (axi_bvalid),  .s_bready  (axi_bready),  .s_bresp   (axi_bresp),
+        .s_bid     (axi_bid),
+        .s_arvalid (axi_arvalid), .s_arready (axi_arready), .s_araddr  (axi_araddr),
+        .s_arlen   (axi_arlen),   .s_arsize  (axi_arsize),  .s_arburst (axi_arburst),
+        .s_arprot  (axi_arprot),  .s_arid    (axi_arid),
+        .s_rvalid  (axi_rvalid),  .s_rready  (axi_rready),  .s_rdata   (axi_rdata),
+        .s_rresp   (axi_rresp),   .s_rlast   (axi_rlast),   .s_rid     (axi_rid),
+        .scl_drive_low (scl_drive_low),
+        .sda_drive_low (sda_drive_low),
+        .scl_pad_in    (scl_pad_in),
+        .sda_pad_in    (sda_pad_in),
+        .uart_tx_out   (uart_tx_out),
+        .seg           (seg),
+        .dp            (dp),
+        .an            (an)
+    );
+
+    // ---- Open-drain I2C pads (driven by the legacy page's GPIO latch) ----
+    od_pad u_scl_pad (.drive_low(scl_drive_low), .pad_in(scl_pad_in), .pad(i2c_scl));
+    od_pad u_sda_pad (.drive_low(sda_drive_low), .pad_in(sda_pad_in), .pad(i2c_sda));
 
     // TCM: dual-port memory behind its wrapper
     tcm_wrap #(
@@ -906,40 +950,6 @@ module cpu_pipeline_top #(
         .addrb  (tcm_addrb),
         .doutb  (tcm_doutb)
     );
-
-    // ========================================================================
-    //  I2C GPIO MMIO Register (0xC000_0000) — software bit-banged I2C
-    // ========================================================================
-    // Write: bit0 = SCL, bit1 = SDA. 1 releases the line (pulled up
-    // externally), 0 drives it low (open-drain). Reset: both released.
-    // Read:  bit0/bit1 = actual SCL/SDA pin levels, through a 2-FF
-    //        synchroniser (an I2C target can drive SDA / stretch SCL at any
-    //        time). A write is visible on a read 3 cycles later.
-
-    // ---- GPIO Output Register (Write Path) ----
-    always_ff @(posedge clk) begin
-        if (reset)
-            gpio_out_reg <= 2'b11;
-        else if (gpio_we)
-            gpio_out_reg <= ex_mem_rs2_data[1:0];
-    end
-
-    // ---- Open-drain pads ----
-    od_pad u_scl_pad (.drive_low(~gpio_out_reg[0]), .pad_in(scl_pad_in), .pad(i2c_scl));
-    od_pad u_sda_pad (.drive_low(~gpio_out_reg[1]), .pad_in(sda_pad_in), .pad(i2c_sda));
-
-    // ---- Input synchroniser (Read Path) ----
-    always_ff @(posedge clk) begin
-        if (reset) begin
-            i2c_sync1 <= 2'b11;
-            i2c_sync2 <= 2'b11;
-        end else begin
-            i2c_sync1 <= {sda_pad_in, scl_pad_in};
-            i2c_sync2 <= i2c_sync1;
-        end
-    end
-    assign scl_pin_in = i2c_sync2[0];
-    assign sda_pin_in = i2c_sync2[1];
 
     // ========================================================================
     //  Machine timer (0xC000_0100..0x10F) and external interrupt line
@@ -965,71 +975,15 @@ module cpu_pipeline_top #(
     assign meip = ext_irq_sync[1];
 
     // ========================================================================
-    //  UART TX Peripheral (0xC000_0004)
-    // ========================================================================
-
-    // Generate a single-cycle valid pulse on the write edge.
-    assign uart_tx_valid = uart_we;
-
-    uart_tx #(
-        .CLK_FREQ  (100_000_000),
-        .BAUD_RATE (115_200)
-    ) u_uart_tx (
-        .clk       (clk),
-        .reset     (reset),
-        .tx_data   (ex_mem_rs2_data[7:0]),
-        .tx_valid  (uart_tx_valid),
-        .tx_out    (uart_tx_out),
-        .tx_busy   (uart_tx_busy)
-    );
-
-    // ========================================================================
-    //  7-Segment Display Peripheral (0xC000_0008)
-    // ========================================================================
-
-    // ---- Display Data Register ----
-    always_ff @(posedge clk) begin
-        if (reset)
-            seg_display_data <= 16'h0000;
-        else if (seg_we)
-            seg_display_data <= ex_mem_rs2_data[15:0];
-    end
-
-    // ---- Hardware Display Controller ----
-    seg_display u_seg_display (
-        .clk          (clk),
-        .reset        (reset),
-        .display_data (seg_display_data),
-        .an           (an),
-        .seg          (seg),
-        .dp           (dp)
-    );
-
-    // ========================================================================
-    //  Peripheral Read-Back Mux (I2C / UART / 7-Seg / GPIO Debug)
-    // ========================================================================
-    always_comb begin
-        case (ex_mem_alu_result[3:2])
-            2'b00:   gpio_rdata = {30'b0, sda_pin_in, scl_pin_in};
-            2'b01:   gpio_rdata = {31'b0, uart_tx_busy};
-            2'b10:   gpio_rdata = {16'b0, seg_display_data};
-            2'b11:   gpio_rdata = {30'b0, gpio_out_reg}; // Debug: output reg
-            default: gpio_rdata = 32'b0;
-        endcase
-    end
-
-    // ========================================================================
-    //  MEM Read Data Mux — TCM / Peripherals (0 for a faulting access)
+    //  MEM Read Data Mux — TCM / core-local timer / data bus
     // ========================================================================
     always_comb begin
         if (is_tcm_access)
             mem_read_data_muxed = tcm_douta;
-        else if (is_periph_page0)
-            mem_read_data_muxed = bus_rsp_rdata;
         else if (is_timer)
             mem_read_data_muxed = timer_rdata;
         else
-            mem_read_data_muxed = 32'b0;
+            mem_read_data_muxed = bus_rsp_rdata;     // 0 with an error response
     end
 
     // ---- Load width: byte/half select by addr[1:0] and sign/zero extend ----

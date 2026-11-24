@@ -30,7 +30,7 @@ sentinel: .word 0x5ee5ee55
     CHECK   t0, 0x33
     sw      t3, 0(a0)
 
-    li      a0, 0xC0001000          // past the peripheral page
+    li      a0, 0xC000F000          // unused APB slot (was 0xC000_1000, now UART0)
     li      t0, 0x44
     lw      t0, 0(a0)
     CHECK   t0, 0x44

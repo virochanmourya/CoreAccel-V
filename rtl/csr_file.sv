@@ -123,7 +123,9 @@ module csr_file
     end
 
     assign mcycle_inc   = mcycle_q + 64'd1;
-    assign minstret_inc = minstret_q + {63'd0, instret_inc};
+    // instret_inc is an enable, not the adder's carry-in, so the late
+    // retire/stall decision does not ripple through the 64-bit carry chain.
+    assign minstret_inc = minstret_q + 64'd1;
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -146,8 +148,9 @@ module csr_file
             else                                 mcycle_q <= mcycle_inc;
 
             if (we && addr == CSR_MINSTRET)       minstret_q <= {minstret_q[63:32], wdata};
-            else if (we && addr == CSR_MINSTRETH) minstret_q <= {wdata, minstret_inc[31:0]};
-            else                                  minstret_q <= minstret_inc;
+            else if (we && addr == CSR_MINSTRETH) minstret_q <= {wdata, instret_inc ? minstret_inc[31:0]
+                                                                                      : minstret_q[31:0]};
+            else if (instret_inc)                 minstret_q <= minstret_inc;
 
             if (trap_take) begin
                 mepc_q       <= trap_pc[31:2];

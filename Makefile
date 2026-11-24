@@ -31,6 +31,7 @@ ARCH    := -march=rv32im_zicsr -mabi=ilp32
 RTL_F   := $(ROOT)/rtl/rtl.f
 RTL_SRC := $(addprefix $(ROOT)/,$(shell cat $(RTL_F)))
 TB_SV   := $(ROOT)/tb/commit_monitor.sv $(ROOT)/tb/uart_monitor.sv $(ROOT)/tb/core_sva.sv \
+           $(ROOT)/tb/bus_sva.sv \
            $(ROOT)/tb/i2c_target_model.sv \
            $(ROOT)/tb/tb_top.sv
 TB_DEPS := $(TB_SV) $(wildcard $(ROOT)/tb/*.svh)
@@ -96,6 +97,9 @@ $(SIM_STAMP): $(RTL_SRC) $(RTL_F) $(TB_DEPS)
 	    || { grep -E 'ERROR|WARNING' xvlog.log; exit 1; }
 	@$(XSIM_ENV) && xelab tb_top -s tb_top -timescale 1ns/1ps -debug off > xelab.log 2>&1 \
 	    || { grep -E 'ERROR|WARNING' xelab.log; exit 1; }
+	@# xelab drops unsupported assertions (and every one after them) with only a warning
+	@! grep -E 'XSIM 43-(4127|4455)' $(SIM_DIR)/xelab.log $(SIM_DIR)/xvlog.log \
+	    || { echo "xsim ignored assertions (see above)"; exit 1; }
 	@touch $@
 	@echo "xsim snapshot ready: $(SIM_DIR)"
 

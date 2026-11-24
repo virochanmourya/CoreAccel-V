@@ -43,6 +43,7 @@
 `define PRB_BUS_WAIT   dut.bus_wait_inj      // tied to 0 in the RTL; forced by the hook
 `define PRB_BUS_BUSY   dut.mem_is_bus        // a bus access is in MEM
 `define PRB_MEM_STALL  dut.mem_stall         // ... and MEM is waiting for it
+`define PRB_BUS_ADDR   dut.ex_mem_alu_result // its address
 
 // Register write-back port (retirement proxy; no PC is carried to WB yet).
 // rf_we is gated by the global stall, so each write is seen once.

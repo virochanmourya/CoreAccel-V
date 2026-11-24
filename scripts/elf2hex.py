@@ -135,6 +135,8 @@ def main():
         args.append("HOLD_EX_STORES=%d" % symbols["test_hold_ex_stores"])
     if "test_bus_wait" in symbols:         # same: wins over the Makefile's WAIT
         args.append("BUS_WAIT=%d" % symbols["test_bus_wait"])
+    if "test_bus_hang_addr" in symbols:
+        args.append("BUS_HANG_ADDR=%08x" % symbols["test_bus_hang_addr"])
     for sym, key in (("expected_dbus_errors", "DBUS_ERRORS"),
                      ("expected_illegal_errors", "ILLEGAL_ERRORS"),
                      ("expected_misaligned_errors", "MISALIGNED_ERRORS"),
