@@ -252,7 +252,8 @@ module cpu_pipeline_top #(
     // IF/ID/EX: it wins over an EX redirect and over any hold, and flushes
     // IF/ID, ID/EX and EX/MEM (ex_kill blocks the EX instruction's commits).
     assign pc_write        = ~(stall | ex_hold) | pc_redirect | mem_redirect;
-    assign if_id_stall     = (stall | ex_hold) & ~pc_redirect;
+    // A flush wins over a stall in IF/ID, so pc_redirect is not needed here.
+    assign if_id_stall     = stall | ex_hold;
     assign if_id_flush     = pc_redirect | mem_redirect;
     assign id_ex_flush     = stall | pc_redirect | mem_redirect;
     assign id_ex_stall     = ex_hold;
@@ -318,7 +319,7 @@ module cpu_pipeline_top #(
         .imm12          (if_id_instruction[31:20]),
         .rs1_field      (id_rs1),
         .rd_field       (id_rd),
-        .squash         (if_id_fetch_fault | irq_tag),
+        .squash         (if_id_fetch_fault | irq_tag | ~if_id_valid),
         .reg_write      (id_reg_write),
         .alu_src        (id_alu_src),
         .mem_read       (id_mem_read),
@@ -379,7 +380,9 @@ module cpu_pipeline_top #(
 
     // ---- ID-stage exceptions (priority: interrupt, fetch fault, illegal,
     //      EBREAK, ECALL). The control unit already turned it into a bubble.
-    assign id_exc = irq_tag | if_id_fetch_fault | id_illegal | id_is_ecall | id_is_ebreak;
+    // A bubble in IF/ID (flushed: stale instruction bits) raises nothing.
+    assign id_exc = if_id_valid &
+                    (irq_tag | if_id_fetch_fault | id_illegal | id_is_ecall | id_is_ebreak);
     always_comb begin
         if (irq_tag)                id_cause = irq_cause;  // {1, 7 or 11}
         else if (if_id_fetch_fault) id_cause = 5'd1;    // instruction access fault

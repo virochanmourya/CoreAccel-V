@@ -108,29 +108,61 @@ module id_ex_reg (
     output logic        is_mret_out
 );
 
+    // A flush clears only the valid bit and the control bits that have an
+    // effect (register/memory write, branch/jump, multi-cycle start, CSR,
+    // exception, MRET). Everything else is data: don't-care in a bubble,
+    // so it has no flush and the redirect does not fan out to it.
+
+    // Control
     always_ff @(posedge clk) begin
         if (reset || flush) begin
-            is_mret_out <= 1'b0;
-            cause_out <= '0;
-            csr_we_out <= 1'b0;
-            is_csr_out <= 1'b0;
-            valid_out <= 1'b0;
+            is_mret_out        <= 1'b0;
+            csr_we_out         <= 1'b0;
+            is_csr_out         <= 1'b0;
+            valid_out          <= 1'b0;
             reg_write_out      <= 1'b0;
             mem_to_reg_out     <= 1'b0;
             mem_read_out       <= 1'b0;
             mem_write_out      <= 1'b0;
-            alu_src_out        <= 1'b0;
-            alu_control_out    <= 4'b0000;
-            alu_src_a_out      <= 1'b0;
             pc_to_reg_out      <= 1'b0;
             jump_out           <= 1'b0;
             branch_out         <= 1'b0;
             is_mac_out         <= 1'b0;
             is_mac_clear_out   <= 1'b0;
             mac_to_reg_out     <= 1'b0;
-            mac_rd_op_out      <= 2'b00;
             is_mac_rdshift_out <= 1'b0;
             is_muldiv_out      <= 1'b0;
+            exc_out            <= 1'b0;
+        end
+        else if (!stall) begin
+            is_mret_out        <= is_mret_in;
+            csr_we_out         <= csr_we_in;
+            is_csr_out         <= is_csr_in;
+            valid_out          <= valid_in;
+            reg_write_out      <= reg_write_in;
+            mem_to_reg_out     <= mem_to_reg_in;
+            mem_read_out       <= mem_read_in;
+            mem_write_out      <= mem_write_in;
+            pc_to_reg_out      <= pc_to_reg_in;
+            jump_out           <= jump_in;
+            branch_out         <= branch_in;
+            is_mac_out         <= is_mac_in;
+            is_mac_clear_out   <= is_mac_clear_in;
+            mac_to_reg_out     <= mac_to_reg_in;
+            is_mac_rdshift_out <= is_mac_rdshift_in;
+            is_muldiv_out      <= is_muldiv_in;
+            exc_out            <= exc_in;
+        end
+    end
+
+    // Data
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            cause_out          <= '0;
+            alu_src_out        <= 1'b0;
+            alu_control_out    <= 4'b0000;
+            alu_src_a_out      <= 1'b0;
+            mac_rd_op_out      <= 2'b00;
             pc_out             <= 32'd0;
             rs1_data_out       <= 32'd0;
             rs2_data_out       <= 32'd0;
@@ -139,30 +171,13 @@ module id_ex_reg (
             rs2_addr_out       <= 5'd0;
             rd_addr_out        <= 5'd0;
             funct3_out         <= 3'd0;
-            exc_out            <= 1'b0;
         end
         else if (!stall) begin
-            is_mret_out <= is_mret_in;
-            cause_out <= cause_in;
-            csr_we_out <= csr_we_in;
-            is_csr_out <= is_csr_in;
-            valid_out <= valid_in;
-            reg_write_out      <= reg_write_in;
-            mem_to_reg_out     <= mem_to_reg_in;
-            mem_read_out       <= mem_read_in;
-            mem_write_out      <= mem_write_in;
+            cause_out          <= cause_in;
             alu_src_out        <= alu_src_in;
             alu_control_out    <= alu_control_in;
             alu_src_a_out      <= alu_src_a_in;
-            pc_to_reg_out      <= pc_to_reg_in;
-            jump_out           <= jump_in;
-            branch_out         <= branch_in;
-            is_mac_out         <= is_mac_in;
-            is_mac_clear_out   <= is_mac_clear_in;
-            mac_to_reg_out     <= mac_to_reg_in;
             mac_rd_op_out      <= mac_rd_op_in;
-            is_mac_rdshift_out <= is_mac_rdshift_in;
-            is_muldiv_out      <= is_muldiv_in;
             pc_out             <= pc_in;
             rs1_data_out       <= rs1_data_in;
             rs2_data_out       <= rs2_data_in;
@@ -171,7 +186,6 @@ module id_ex_reg (
             rs2_addr_out       <= rs2_addr_in;
             rd_addr_out        <= rd_addr_in;
             funct3_out         <= funct3_in;
-            exc_out            <= exc_in;
         end
         else begin  // held: keep the instruction, refresh its operands
             rs1_data_out       <= rs1_fwd_in;

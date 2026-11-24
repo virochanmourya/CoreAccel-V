@@ -32,7 +32,14 @@ module core_sva (
     input logic        ex_mem_valid,
     input logic [31:0] pc_current,
     input logic [31:0] csr_mtvec,
-    input logic [31:0] csr_mepc
+    input logic [31:0] csr_mepc,
+    // Bubbles (valid = 0): IF/ID and ID/EX data registers are not flushed,
+    // so a bubble must be harmless through its controls alone.
+    input logic        if_id_valid,
+    input logic        id_ctrl_any,     // OR of every ID control output
+    input logic        id_exc,
+    input logic        id_ex_valid,
+    input logic        id_ex_ctrl_any   // OR of every ID/EX control bit
 );
     logic mem_tcm_store;
     // Same exact range as the EX-stage TCM write enable (0x8000_0000-0x8000_0FFF).
@@ -112,6 +119,24 @@ module core_sva (
         $display("SVA FAIL a_mret_to_mepc t=%0t pc=0x%08h", $time, $sampled(pc_current));
         tb_top.sva_fail();
     end
+
+    // A bubble in ID decodes to all-zero controls and raises no exception,
+    // whatever stale instruction bits IF/ID holds.
+    a_id_bubble_quiet: assert property (
+        @(posedge clk) disable iff (reset)
+        !if_id_valid |-> (!id_ctrl_any && !id_exc)
+    ) else begin
+        $display("SVA FAIL a_id_bubble_quiet t=%0t", $time);
+        tb_top.sva_fail();
+    end
+    // A bubble in EX has every control bit clear.
+    a_ex_bubble_quiet: assert property (
+        @(posedge clk) disable iff (reset)
+        !id_ex_valid |-> !id_ex_ctrl_any
+    ) else begin
+        $display("SVA FAIL a_ex_bubble_quiet t=%0t", $time);
+        tb_top.sva_fail();
+    end
 endmodule
 
 bind cpu_pipeline_top core_sva u_core_sva (
@@ -138,5 +163,17 @@ bind cpu_pipeline_top core_sva u_core_sva (
     .ex_mem_valid      (ex_mem_valid),
     .pc_current        (pc_current),
     .csr_mtvec         (csr_mtvec),
-    .csr_mepc          (csr_mepc)
+    .csr_mepc          (csr_mepc),
+    .if_id_valid       (if_id_valid),
+    .id_ctrl_any       (id_reg_write | id_mem_to_reg | id_mem_read | id_mem_write |
+                        id_branch | id_jump | id_pc_to_reg | id_is_mac | id_is_mac_clear |
+                        id_mac_to_reg | id_is_mac_rdshift | id_is_muldiv | id_is_csr |
+                        id_csr_we | id_is_ecall | id_is_ebreak | id_is_mret |
+                        id_rs1_valid | id_rs2_valid),
+    .id_exc            (id_exc),
+    .id_ex_valid       (id_ex_valid),
+    .id_ex_ctrl_any    (id_ex_reg_write | id_ex_mem_to_reg | id_ex_mem_read | id_ex_mem_write |
+                        id_ex_branch | id_ex_jump | id_ex_pc_to_reg | is_mac_ex | is_mac_clear_ex |
+                        mac_to_reg_ex | is_mac_rdshift_ex | is_muldiv_ex | is_csr_ex |
+                        csr_we_ex | id_ex_exc | id_ex_is_mret)
 );
