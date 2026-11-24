@@ -11,6 +11,8 @@
 #   make sim-build          compile + elaborate the xsim snapshot
 #   make fw                 build firmware/ into build/fw/{imem,tcm}.hex
 #   make lint               Verilator -Wall lint (LibreLane container)
+#   BUS_VIP=1 make ...      add the Xilinx AXI protocol checker on the core's
+#                           AXI port (precompiled xsim library; separate snapshot)
 #   make clean
 # ============================================================================
 SHELL := /bin/bash
@@ -34,6 +36,10 @@ TB_SV   := $(ROOT)/tb/commit_monitor.sv $(ROOT)/tb/uart_monitor.sv $(ROOT)/tb/co
            $(ROOT)/tb/bus_sva.sv \
            $(ROOT)/tb/i2c_target_model.sv \
            $(ROOT)/tb/tb_top.sv
+ifeq ($(BUS_VIP),1)
+TB_SV   += $(ROOT)/tb/axi_pc_bind.sv
+VIP_LIBS := -L axi_protocol_checker_v2_0_21
+endif
 TB_DEPS := $(TB_SV) $(wildcard $(ROOT)/tb/*.svh)
 
 TEST_DIR    := $(ROOT)/tests
@@ -82,7 +88,7 @@ $(BUILD)/tests/mext_random/test.elf: $(GEN_DIR)/mext_random.S $(TEST_COMMON)
 FORCE:
 
 # ---------------------------------------------------------------- xsim
-SIM_DIR   := $(BUILD)/sim
+SIM_DIR   := $(BUILD)/sim$(if $(filter 1,$(BUS_VIP)),_vip)
 SIM_STAMP := $(SIM_DIR)/.elab.stamp
 # settings64.sh returns non-zero even on success, so do not chain it with &&
 XSIM_ENV  := source $(VIVADO_SETTINGS) >/dev/null 2>&1; cd $(SIM_DIR)
@@ -93,9 +99,9 @@ sim-build: $(SIM_STAMP)
 $(SIM_STAMP): $(RTL_SRC) $(RTL_F) $(TB_DEPS)
 	@rm -f $(BUILD)/regress_summary.txt
 	@mkdir -p $(SIM_DIR)
-	@$(XSIM_ENV) && xvlog -sv -i $(ROOT)/tb $(RTL_SRC) $(TB_SV) > xvlog.log 2>&1 \
+	@$(XSIM_ENV) && xvlog -sv -i $(ROOT)/tb $(VIP_LIBS) $(RTL_SRC) $(TB_SV) > xvlog.log 2>&1 \
 	    || { grep -E 'ERROR|WARNING' xvlog.log; exit 1; }
-	@$(XSIM_ENV) && xelab tb_top -s tb_top -timescale 1ns/1ps -debug off > xelab.log 2>&1 \
+	@$(XSIM_ENV) && xelab tb_top -s tb_top -timescale 1ns/1ps -debug off $(VIP_LIBS) > xelab.log 2>&1 \
 	    || { grep -E 'ERROR|WARNING' xelab.log; exit 1; }
 	@# xelab drops unsupported assertions (and every one after them) with only a warning
 	@! grep -E 'XSIM 43-(4127|4455)' $(SIM_DIR)/xelab.log $(SIM_DIR)/xvlog.log \
