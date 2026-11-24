@@ -99,7 +99,7 @@ module cpu_pipeline_top #(
     logic [31:0] mem_load_data; // Load result after byte/half select and extend
     logic [2:0]  ex_mem_funct3; // Load/store width in MEM
 
-    // ---- Data-bus decode / error stub ----
+    // ---- Data-bus decode / unmapped-access fault ----
     logic        is_periph_region; // MEM decode: 0xC000_0000..0xC000_0FFF
     logic        is_periph_mapped; // A defined register inside the peripheral page
     logic        is_tohost; // 0xC000_0FFC: reserved simulation halt (writes ignored)
@@ -108,11 +108,10 @@ module cpu_pipeline_top #(
     logic        timer_we;
     logic [31:0] timer_rdata;
     logic        mem_access; // Load or store in MEM
-    // ---- Unmapped data access (MEM): read-as-zero / write-ignored ----
-    // Not a trap (platform choice: holes are RAZ/WI); the testbench counts it.
-    /* verilator lint_off UNUSEDSIGNAL */
+    // ---- Unmapped data access (MEM): load/store access fault ----
+    // Traps in MEM (cause 5 load / 7 store, mtval = address): rd is not
+    // written and no peripheral or TCM write happens.
     logic        dbus_error;       // MEM: load/store to an unmapped address
-    /* verilator lint_on UNUSEDSIGNAL */
     logic        ex_misaligned;    // EX:  load/store address not naturally aligned
 
     // ---- I2C GPIO MMIO (0xC000_0000) ----
@@ -179,6 +178,8 @@ module cpu_pipeline_top #(
     logic [4:0]  ex_mem_cause;
     logic [31:0] ex_mem_pc, ex_mem_tval;
     logic        mem_trap;                  // take a trap this cycle
+    logic [4:0]  mem_trap_cause;            // its cause {interrupt, code}
+    logic [31:0] mem_trap_tval;             // its mtval
     logic        mem_mret;                  // MRET returns this cycle
     logic        mem_redirect;              // trap or MRET: PC <= mtvec / mepc
     logic [31:0] mem_redirect_target;
@@ -550,7 +551,7 @@ module cpu_pipeline_top #(
     // the exact range check do not wait for the ALU's operand and result muxes.
     // For loads/stores it equals alu_result (checked by an SVA in tb/core_sva.sv).
     // The write enable is gated with the exact TCM range, so a store outside
-    // 0x8000_0000-0x8000_0FFF writes nothing (it raises dbus_error in MEM).
+    // 0x8000_0000-0x8000_0FFF writes nothing (it faults in MEM: dbus_error).
     assign ex_eff_addr   = forwarded_a + id_ex_imm;
     assign ex_is_tcm     = (ex_eff_addr[31:12] == 20'h80000);
     assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ~ex_hold & ~ex_kill}};
@@ -651,9 +652,9 @@ module cpu_pipeline_top #(
         .rdata       (csr_rdata),
         .instret_inc (mem_wb_valid),
         .trap_take   (mem_trap),
-        .trap_cause  (ex_mem_cause),
+        .trap_cause  (mem_trap_cause),
         .trap_pc     (ex_mem_pc),
-        .trap_tval   (ex_mem_tval),
+        .trap_tval   (mem_trap_tval),
         .mret_take   (mem_mret),
         .mtvec_o     (csr_mtvec),
         .mepc_o      (csr_mepc),
@@ -776,11 +777,18 @@ module cpu_pipeline_top #(
     // ========================================================================
     //  MEM STAGE — trap / MRET
     // ========================================================================
-    // Every input is a register (EX/MEM), so the trap decision is early:
-    // ex_kill gates the EX commit points (TCM store, MAC/mul_div start,
-    // MAC_CLEAR, READ_LO/HI sticky flag, CSR write) of the younger
-    // instruction in EX, and mem_redirect wins the PC mux.
-    assign mem_trap            = ex_mem_exc;
+    // Every input is a register (EX/MEM) or the MEM address decode of the
+    // registered address, so the trap decision is early: ex_kill gates the
+    // EX commit points (TCM store, MAC/mul_div start, MAC_CLEAR, READ_LO/HI
+    // sticky flag, CSR write) of the younger instruction in EX, and
+    // mem_redirect wins the PC mux.
+    // Load/store access fault: an unmapped data address (dbus_error, decoded
+    // below) traps here. ex_mem_exc and dbus_error never coincide: an
+    // instruction with an earlier exception has its memory controls cleared.
+    assign mem_trap            = ex_mem_exc | dbus_error;
+    assign mem_trap_cause      = ex_mem_exc ? ex_mem_cause
+                               : (ex_mem_mem_write ? 5'd7 : 5'd5);
+    assign mem_trap_tval       = ex_mem_exc ? ex_mem_tval : ex_mem_alu_result;
     assign mem_mret            = ex_mem_is_mret;
     assign mem_redirect        = mem_trap | mem_mret;
     assign mem_redirect_target = mem_trap ? csr_mtvec : csr_mepc;
@@ -798,7 +806,7 @@ module cpu_pipeline_top #(
     //   0xC000_0100 / 0x104        mtime lo / hi
     //   0xC000_0108 / 0x10C        mtimecmp lo / hi
     //   0xC000_0FFC                reserved: simulation halt ("tohost")
-    //   anything else              unmapped -> dbus_error (reads return 0)
+    //   anything else              unmapped -> dbus_error: load/store access fault
     // This decode is exact and runs on the registered EX/MEM address. The TCM
     // write enable uses the same exact range, decoded in EX from the AGU.
     assign is_tcm_access    = (ex_mem_alu_result[31:12] == 20'h80000);
@@ -944,7 +952,7 @@ module cpu_pipeline_top #(
     end
 
     // ========================================================================
-    //  MEM Read Data Mux — TCM / Peripherals / unmapped (0)
+    //  MEM Read Data Mux — TCM / Peripherals (0 for a faulting access)
     // ========================================================================
     always_comb begin
         if (is_tcm_access)
@@ -982,7 +990,7 @@ module cpu_pipeline_top #(
     mem_wb_reg u_mem_wb (
         .clk             (clk),
         .reset           (reset),
-        .reg_write_in    (ex_mem_reg_write),  .reg_write_out  (mem_wb_reg_write),
+        .reg_write_in    (ex_mem_reg_write & ~mem_trap), .reg_write_out (mem_wb_reg_write),  // a faulting load writes no rd
         .mem_to_reg_in   (ex_mem_mem_to_reg), .mem_to_reg_out (mem_wb_mem_to_reg),
         .mem_data_in     (mem_load_data),    .mem_data_out   (mem_wb_mem_data),
         .alu_result_in   (ex_mem_alu_result),  .alu_result_out (mem_wb_alu_result),

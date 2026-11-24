@@ -87,6 +87,7 @@ module tb_top;
     int          sva_errors = 0;   // bumped via sva_fail() by bound assertion modules
     int          dbus_errors = 0;  // unmapped data accesses observed
     int          dbus_expected;    // ... and how many the test declared
+    int          bus_faults = 0;   // load/store access-fault traps (cause 5/7): one per dbus error
     int          illegal_errors = 0, illegal_expected;
     int          misal_errors   = 0, misal_expected;
     int          other_traps    = 0, other_expected;
@@ -168,6 +169,7 @@ module tb_top;
                 case (`PRB_TRAP_CAUSE)
                     5'd2:      illegal_errors++;
                     5'd4, 5'd6: misal_errors++;
+                    5'd5, 5'd7: bus_faults++;      // checked against dbus_errors
                     default:   other_traps++;
                 endcase
             end
@@ -210,10 +212,12 @@ module tb_top;
         if (sig_words == 0)
             $display("RESULT FAIL test=%s cycles=%0d reason=no_signature", test_name, cycles);
         else if (dbus_errors != dbus_expected || illegal_errors != illegal_expected ||
-                 misal_errors != misal_expected || other_traps != other_expected)
-            $display("RESULT FAIL test=%s cycles=%0d errors(dbus/illegal/misaligned/other)=%0d/%0d/%0d/%0d expected=%0d/%0d/%0d/%0d mismatches=%0d/%0d",
+                 misal_errors != misal_expected || other_traps != other_expected ||
+                 bus_faults != dbus_errors)
+            $display("RESULT FAIL test=%s cycles=%0d errors(dbus/illegal/misaligned/other)=%0d/%0d/%0d/%0d expected=%0d/%0d/%0d/%0d bus_fault_traps=%0d mismatches=%0d/%0d",
                      test_name, cycles, dbus_errors, illegal_errors, misal_errors, other_traps,
-                     dbus_expected, illegal_expected, misal_expected, other_expected, mismatches, sig_words);
+                     dbus_expected, illegal_expected, misal_expected, other_expected, bus_faults,
+                     mismatches, sig_words);
         else if (sva_errors != 0)
             $display("RESULT FAIL test=%s cycles=%0d sva_errors=%0d mismatches=%0d/%0d",
                      test_name, cycles, sva_errors, mismatches, sig_words);

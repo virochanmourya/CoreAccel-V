@@ -15,15 +15,16 @@
 `define PRB_ST_ADDR    dut.ex_mem_alu_result
 `define PRB_ST_DATA    dut.ex_mem_rs2_data
 
-// Data-bus error stub (load/store to an unmapped address), in MEM
+// Data-bus error (load/store to an unmapped address), in MEM: it also traps
+// as a load/store access fault (cause 5/7)
 `define PRB_DBUS_ERR   dut.dbus_error
 `define PRB_DBUS_ADDR  dut.ex_mem_alu_result
 
 // Trap entry (taken in MEM): one cycle per trap, with its cause/PC/tval
 `define PRB_TRAP         dut.mem_trap
-`define PRB_TRAP_CAUSE   dut.ex_mem_cause
+`define PRB_TRAP_CAUSE   dut.mem_trap_cause
 `define PRB_TRAP_PC      dut.ex_mem_pc
-`define PRB_TRAP_TVAL    dut.ex_mem_tval
+`define PRB_TRAP_TVAL    dut.mem_trap_tval
 
 // External interrupt request (tied off in the RTL; the harness forces it)
 `define PRB_EXT_IRQ      dut.ext_irq
