@@ -45,9 +45,9 @@ e4: sw      t1, 0(a3)
 e5: lw      t0, 8(a3)
     CHECK   t0, 0x33
     CHECK_TRAP 5, e5, 0xC000F008
-    li      a3, 0xC0002000
+    li      a3, 0xC0009000
 e6: sb      t1, 3(a3)
-    CHECK_TRAP 7, e6, 0xC0002003
+    CHECK_TRAP 7, e6, 0xC0009003
     TRAP_FIELD t0, TR_COUNT
     CHECK   t0, 6
 

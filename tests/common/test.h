@@ -30,7 +30,10 @@
 #define SIM_UART0_BADSTOP   0x200
 #define SIM_UART0_LOOP_ON   0x300
 #define SIM_UART0_LOOP_OFF  0x301
+// SPI echo target on CS1: set its mode (CPOL, CPHA) = low 2 bits.
+#define SIM_SPI_ECHO_MODE   0x400
 #define UART0_BASE  0xC0001000
+#define SPI_BASE    0xC0002000
 #define PLIC_BASE   0xC4000000
 // Signature slots; a test with more checks defines SIG_WORDS before the include.
 #ifndef SIG_WORDS

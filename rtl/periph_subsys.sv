@@ -10,8 +10,10 @@
 //     -> slave 0: axi4_to_apb4, APB4 select per 4 KB slot:
 //          slot 0  0xC000_0000  legacy page (GPIO bit-bang I2C, UART TX, 7-seg)
 //          slot 1  0xC000_1000  UART0 (TX/RX, FIFOs, irq)
-//          2..15                reserved: PSLVERR
-//          PLIC    0xC400_0000  standard layout, sources 1..16 (UART0 = 1)
+//          slot 2  0xC000_2000  SPI master (modes 0-3, FIFOs, NCS chip selects)
+//          3..15                reserved: PSLVERR
+//          PLIC    0xC400_0000  standard layout, sources 1..16
+//                               (UART0 = 1, SPI = 2)
 //   The core-local words of slot 0 (mtimer 0x100-0x10F, tohost 0xFFC) are
 //   answered inside the core and never reach this bus.
 //
@@ -27,6 +29,8 @@ module periph_subsys #(
     parameter int BAUD_RATE = 115_200,
     parameter bit SEG_EN    = 1'b1,
     parameter int UART0_FIFO_DEPTH = 16,
+    parameter int SPI_FIFO_DEPTH = 8,
+    parameter int SPI_NCS        = 2,
     parameter int PLIC_NSRC  = 16,
     parameter int PLIC_PRIO_W = 3
 )(
@@ -78,18 +82,23 @@ module periph_subsys #(
     output logic [3:0]  an,
     output logic        uart0_txd,
     input  logic        uart0_rxd,       // asynchronous
+    output logic        spi_sck,
+    output logic        spi_mosi,
+    input  logic        spi_miso,
+    output logic [SPI_NCS-1:0] spi_cs_n,
 
     // ---- PLIC output (to the core's MEIP) ----
     output logic        plic_eip
 );
 
-    // PLIC source map: 1 = UART0; 2..PLIC_NSRC reserved (SPI, I2C, GPIO,
-    // timers, DMA in later phases).
-    logic                 uart0_irq;
+    // PLIC source map: 1 = UART0, 2 = SPI; 3..PLIC_NSRC reserved (I2C,
+    // GPIO, timers, DMA in later steps).
+    logic                 uart0_irq, spi_irq;
     logic [PLIC_NSRC:1]   irq_src;
     always_comb begin
         irq_src    = '0;
         irq_src[1] = uart0_irq;
+        irq_src[2] = spi_irq;
     end
 
     // ------------------------------------------------------------ AXI demux
@@ -141,6 +150,7 @@ module periph_subsys #(
     localparam int NP    = NSLOT + 1;          // + PLIC
     localparam int P_LEGACY = 0;
     localparam int P_UART0  = 1;
+    localparam int P_SPI    = 2;
     localparam int P_PLIC   = NSLOT;
 
     logic [31:0]         paddr, pwdata;
@@ -205,6 +215,19 @@ module periph_subsys #(
         .txd (uart0_txd), .rxd (uart0_rxd), .irq (uart0_irq)
     );
 
+    // Slot 2: SPI master
+    apb_spi #(
+        .FIFO_DEPTH (SPI_FIFO_DEPTH),
+        .NCS        (SPI_NCS)
+    ) u_spi (
+        .clk (clk), .reset (reset),
+        .psel (psel[P_SPI]), .penable (s_penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_SPI]), .pready (pready_raw[P_SPI]),
+        .pslverr (pslverr[P_SPI]),
+        .sck (spi_sck), .mosi (spi_mosi), .miso (spi_miso), .cs_n (spi_cs_n),
+        .irq (spi_irq)
+    );
+
     // PLIC (its own APB select)
     apb_plic #(
         .NSRC   (PLIC_NSRC),
@@ -219,7 +242,7 @@ module periph_subsys #(
 
     // Unused selects: answer PSLVERR at once.
     generate
-        for (genvar i = 2; i < NSLOT; i++) begin : g_empty
+        for (genvar i = 3; i < NSLOT; i++) begin : g_empty
             assign prdata[i]  = '0;
             assign pready_raw[i] = 1'b1;
             assign pslverr[i] = 1'b1;
@@ -228,6 +251,6 @@ module periph_subsys #(
 
     // PSTRB/PPROT: the slaves are word registers (lane-replicated data).
     logic unused;
-    assign unused = ^{pstrb, pprot, psel[NSLOT-1:2]};
+    assign unused = ^{pstrb, pprot, psel[NSLOT-1:3]};
 
 endmodule

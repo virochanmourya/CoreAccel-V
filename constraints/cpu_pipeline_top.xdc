@@ -128,25 +128,34 @@ set_false_path -from [get_ports i2c_scl]
 set_false_path -from [get_ports i2c_sda]
 
 ## ============================================================================
-## 8. UART TX — Basys 3 Onboard USB-UART Bridge (FTDI FT2232HQ)
+## 8. UARTs
 ## ============================================================================
-## One-way telemetry output at 115200 baud, 8N1. Directly connected to the
-## FTDI USB-UART chip on the Basys 3 board — no external wiring needed.
-## Pin A18 = RsTx per Digilent official Basys 3 XDC (FPGA transmit direction).
-
-set_property -dict { PACKAGE_PIN A18  IOSTANDARD LVCMOS33 } [get_ports uart_tx_out]
-
-## UART baud rate (115200) is ~1000× slower than fabric clock.
-## No timing relevance to internal pipeline closure.
-set_false_path -to [get_ports uart_tx_out]
-
-## UART0 (APB slot 1, TX + RX). PROVISIONAL pins, to be confirmed: Pmod JB
-## pin 1 (A14) = TX out, pin 2 (A16) = RX in (needs an external USB-UART
-## adapter; the onboard bridge's TX pin A18 stays with the legacy UART).
-set_property -dict { PACKAGE_PIN A14  IOSTANDARD LVCMOS33 } [get_ports uart0_tx_out]
-set_property -dict { PACKAGE_PIN A16  IOSTANDARD LVCMOS33 } [get_ports uart0_rx_in]
+## UART0 (APB slot 1, TX + RX) on the Basys 3 onboard USB-UART bridge
+## (FTDI FT2232HQ): A18 = RsTx (FPGA transmit), B18 = RsRx (FPGA receive),
+## per the Digilent Basys 3 master XDC. No external wiring needed.
+set_property -dict { PACKAGE_PIN A18  IOSTANDARD LVCMOS33 } [get_ports uart0_tx_out]
+set_property -dict { PACKAGE_PIN B18  IOSTANDARD LVCMOS33 } [get_ports uart0_rx_in]
 set_false_path -to   [get_ports uart0_tx_out]
 set_false_path -from [get_ports uart0_rx_in]
+
+## Legacy one-way telemetry UART (legacy page, 115200 8N1) on Pmod JB pin 1
+## (A14): needs an external USB-UART adapter.
+set_property -dict { PACKAGE_PIN A14  IOSTANDARD LVCMOS33 } [get_ports uart_tx_out]
+set_false_path -to [get_ports uart_tx_out]
+
+## SPI master (APB slot 2) on Pmod JC, Digilent Pmod SPI pin order:
+## JC1 = CS0, JC2 = MOSI, JC3 = MISO, JC4 = SCK, JC7 = CS1.
+## SCK is at most clk/2; MOSI/CS change and MISO is sampled on internal
+## clock edges, so the board-level timing is left to the SCK divider.
+set_property -dict { PACKAGE_PIN K17  IOSTANDARD LVCMOS33 } [get_ports {spi_cs_n[0]}]
+set_property -dict { PACKAGE_PIN M18  IOSTANDARD LVCMOS33 } [get_ports spi_mosi]
+set_property -dict { PACKAGE_PIN N17  IOSTANDARD LVCMOS33  PULLUP TRUE } [get_ports spi_miso]
+set_property -dict { PACKAGE_PIN P18  IOSTANDARD LVCMOS33 } [get_ports spi_sck]
+set_property -dict { PACKAGE_PIN L17  IOSTANDARD LVCMOS33 } [get_ports {spi_cs_n[1]}]
+set_false_path -to   [get_ports {spi_cs_n[*]}]
+set_false_path -to   [get_ports spi_mosi]
+set_false_path -to   [get_ports spi_sck]
+set_false_path -from [get_ports spi_miso]
 
 ## ============================================================================
 ## 9. 7-SEGMENT DISPLAY — Basys 3 Onboard 4-Digit Common-Anode

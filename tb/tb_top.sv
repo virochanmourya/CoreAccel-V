@@ -30,6 +30,7 @@
 //   0x1xx -> send byte xx to UART0's RX pin (8N1 at UART0's current DIV),
 //   0x2xx -> the same with a low stop bit (framing error),
 //   0x300 / 0x301 -> UART0 external loopback (RX pin = TX pin) on / off,
+//   0x40m -> SPI echo target (CS1) mode m = {CPOL, CPHA},
 //   any other value -> halt and check (TEST_END stores 0).
 // Output ends with exactly one line:
 //   RESULT PASS|FAIL|TIMEOUT test=<name> cycles=<n> ...
@@ -59,6 +60,11 @@ module tb_top;
     logic       uart0_rx_drv = 1'b1;     // harness driver of UART0's RX pin
     bit         uart0_loop   = 1'b0;     // external loopback
     assign uart0_rx = uart0_loop ? uart0_tx : uart0_rx_drv;
+    // SPI: flash model on CS0, any-mode echo target on CS1, MISO pulled up
+    wire        spi_sck, spi_mosi, spi_miso;
+    wire [1:0]  spi_cs_n;
+    logic [1:0] spi_echo_mode = 2'b00;
+    pullup (spi_miso);
 
     pullup (i2c_scl);
     pullup (i2c_sda);
@@ -75,6 +81,10 @@ module tb_top;
         .uart_tx_out (uart_tx_out),
         .uart0_tx_out (uart0_tx),
         .uart0_rx_in  (uart0_rx),
+        .spi_sck     (spi_sck),
+        .spi_mosi    (spi_mosi),
+        .spi_miso    (spi_miso),
+        .spi_cs_n    (spi_cs_n),
         .seg         (seg),
         .dp          (dp),
         .an          (an)
@@ -92,6 +102,10 @@ module tb_top;
 
     // I2C target at 0x48 (ADS1115 address), open-drain on the pulled-up bus
     i2c_target_model #(.ADDR(7'h48)) u_i2c_target (.scl(i2c_scl), .sda(i2c_sda));
+
+    spi_flash_model u_spi_flash (.cs_n(spi_cs_n[0]), .sck(spi_sck), .mosi(spi_mosi), .miso(spi_miso));
+    spi_echo_model  u_spi_echo  (.cs_n(spi_cs_n[1]), .sck(spi_sck), .mosi(spi_mosi), .miso(spi_miso),
+                                 .mode(spi_echo_mode), .div(16'(`PRB_SPI_DIV)));
 
     // ---------------------------------------------------------------- config
     string       test_name, imem_file, tcm_file, exp_file, sig_out;
@@ -252,6 +266,8 @@ module tb_top;
                 uart0_loop = 1'b1;
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA == 32'h301) begin
                 uart0_loop = 1'b0;
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:2] == 30'h100) begin
+                spi_echo_mode <= `PRB_ST_DATA[1:0];
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
                 halted = 1'b1;
                 fork check_and_finish(); join_none

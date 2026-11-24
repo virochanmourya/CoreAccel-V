@@ -35,6 +35,7 @@ RTL_SRC := $(addprefix $(ROOT)/,$(shell cat $(RTL_F)))
 TB_SV   := $(ROOT)/tb/commit_monitor.sv $(ROOT)/tb/uart_monitor.sv $(ROOT)/tb/core_sva.sv \
            $(ROOT)/tb/bus_sva.sv \
            $(ROOT)/tb/i2c_target_model.sv \
+           $(ROOT)/tb/spi_flash_model.sv $(ROOT)/tb/spi_echo_model.sv \
            $(ROOT)/tb/tb_top.sv
 ifeq ($(BUS_VIP),1)
 TB_SV   += $(ROOT)/tb/axi_pc_bind.sv

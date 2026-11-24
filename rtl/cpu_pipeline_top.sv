@@ -13,7 +13,8 @@ module cpu_pipeline_top #(
     parameter int    TCM_WORDS  = 1024,    // 4 KB at 0x8000_0000 (power of two)
     parameter int    CLK_FREQ   = 100_000_000,
     parameter bit    SEG_EN     = 1'b1,    // 7-segment controller (FPGA board only)
-    parameter int    BUS_TIMEOUT = 256     // cycles before a bus access faults
+    parameter int    BUS_TIMEOUT = 256,    // cycles before a bus access faults
+    parameter int    SPI_NCS    = 2        // SPI chip selects
 )(
     input  logic       clk,
     input  logic       reset,
@@ -32,6 +33,12 @@ module cpu_pipeline_top #(
     // UART0 (APB slot 1)
     output logic       uart0_tx_out,
     input  logic       uart0_rx_in,
+
+    // SPI master (APB slot 2)
+    output logic       spi_sck,
+    output logic       spi_mosi,
+    input  logic       spi_miso,
+    output logic [SPI_NCS-1:0] spi_cs_n,
 
     // 7-Segment Display (Hardware Multiplexed)
     output logic [6:0] seg,
@@ -911,7 +918,8 @@ module cpu_pipeline_top #(
     periph_subsys #(
         .CLK_FREQ  (CLK_FREQ),
         .BAUD_RATE (115_200),
-        .SEG_EN    (SEG_EN)
+        .SEG_EN    (SEG_EN),
+        .SPI_NCS   (SPI_NCS)
     ) u_periph (
         .clk       (clk),
         .reset     (reset),
@@ -938,6 +946,10 @@ module cpu_pipeline_top #(
         .an            (an),
         .uart0_txd     (uart0_tx_out),
         .uart0_rxd     (uart0_rx_in),
+        .spi_sck       (spi_sck),
+        .spi_mosi      (spi_mosi),
+        .spi_miso      (spi_miso),
+        .spi_cs_n      (spi_cs_n),
         .plic_eip      (plic_eip)
     );
 

@@ -47,6 +47,8 @@
 
 // UART0 bit time (clocks per bit), for the harness's RX-pin driver
 `define PRB_UART0_DIV  dut.u_periph.u_uart0.div
+// SPI SCK divider, for the echo target's timing checks
+`define PRB_SPI_DIV    dut.u_periph.u_spi.div
 
 // Register write-back port (retirement proxy; no PC is carried to WB yet).
 // rf_we is gated by the global stall, so each write is seen once.

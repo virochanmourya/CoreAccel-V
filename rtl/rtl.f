@@ -24,6 +24,7 @@ rtl/od_pad.sv
 rtl/sync_fifo.sv
 rtl/apb_uart.sv
 rtl/apb_plic.sv
+rtl/apb_spi.sv
 rtl/dbus_axi_master.sv
 rtl/axi4_demux.sv
 rtl/axi4_to_apb4.sv
