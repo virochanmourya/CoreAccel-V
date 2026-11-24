@@ -16,7 +16,10 @@
 //   answered inside the core and never reach this bus.
 //
 //   wait_inj: test hook (tied to 0 in the core): wait states on the AXI
-//   READYs and on PREADY.
+//   READYs (demux), on accepting a transfer / showing R-B (bridge), and on
+//   PREADY here: while it is 1 the bridge sees PREADY low in ACCESS, and
+//   the slaves see PENABLE low (a longer SETUP), so every slave still acts
+//   exactly once per transfer, when PSEL & PENABLE are both 1.
 // ============================================================================
 
 module periph_subsys #(
@@ -147,6 +150,11 @@ module periph_subsys #(
     logic [2:0]          pprot;
     logic [NP-1:0][31:0] prdata;
     logic [NP-1:0]       pready, pslverr;
+    logic [NP-1:0]       pready_raw;        // slaves' own PREADY
+    logic                s_penable;         // PENABLE as the slaves see it
+
+    assign s_penable = penable & ~wait_inj;
+    assign pready    = pready_raw & {NP{~wait_inj}};
 
     axi4_to_apb4 #(
         .NSLOT      (NSLOT),
@@ -176,8 +184,8 @@ module periph_subsys #(
         .SEG_EN    (SEG_EN)
     ) u_legacy (
         .clk (clk), .reset (reset),
-        .psel (psel[P_LEGACY]), .penable (penable), .pwrite (pwrite), .paddr (paddr),
-        .pwdata (pwdata), .prdata (prdata[P_LEGACY]), .pready (pready[P_LEGACY]),
+        .psel (psel[P_LEGACY]), .penable (s_penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_LEGACY]), .pready (pready_raw[P_LEGACY]),
         .pslverr (pslverr[P_LEGACY]),
         .scl_drive_low (scl_drive_low), .sda_drive_low (sda_drive_low),
         .scl_pad_in (scl_pad_in), .sda_pad_in (sda_pad_in),
@@ -191,8 +199,8 @@ module periph_subsys #(
         .FIFO_DEPTH (UART0_FIFO_DEPTH)
     ) u_uart0 (
         .clk (clk), .reset (reset),
-        .psel (psel[P_UART0]), .penable (penable), .pwrite (pwrite), .paddr (paddr),
-        .pwdata (pwdata), .prdata (prdata[P_UART0]), .pready (pready[P_UART0]),
+        .psel (psel[P_UART0]), .penable (s_penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_UART0]), .pready (pready_raw[P_UART0]),
         .pslverr (pslverr[P_UART0]),
         .txd (uart0_txd), .rxd (uart0_rxd), .irq (uart0_irq)
     );
@@ -203,8 +211,8 @@ module periph_subsys #(
         .PRIO_W (PLIC_PRIO_W)
     ) u_plic (
         .clk (clk), .reset (reset),
-        .psel (psel[P_PLIC]), .penable (penable), .pwrite (pwrite), .paddr (paddr),
-        .pwdata (pwdata), .prdata (prdata[P_PLIC]), .pready (pready[P_PLIC]),
+        .psel (psel[P_PLIC]), .penable (s_penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_PLIC]), .pready (pready_raw[P_PLIC]),
         .pslverr (pslverr[P_PLIC]),
         .src (irq_src), .eip (plic_eip)
     );
@@ -213,7 +221,7 @@ module periph_subsys #(
     generate
         for (genvar i = 2; i < NSLOT; i++) begin : g_empty
             assign prdata[i]  = '0;
-            assign pready[i]  = 1'b1;
+            assign pready_raw[i] = 1'b1;
             assign pslverr[i] = 1'b1;
         end
     endgenerate
