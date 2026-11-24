@@ -33,6 +33,7 @@
 //   0x40m -> SPI echo target (CS1) mode m = {CPOL, CPHA},
 //   0x5nn -> I2C target stretches SCL nn us after every ACK clock (0 = off),
 //   0x6kk -> I2C target acts as a second master at address bit kk,
+//   0x7nn -> timer capture input 1 = pwm_out[nn],
 //   0x8nn -> I2C bus hog for nn us: nn < 0x80 SDA stuck low (no START),
 //            nn >= 0x80 another master holds the bus (START, lines high),
 //   any other value -> halt and check (TEST_END stores 0).
@@ -80,6 +81,12 @@ module tb_top;
         assign (pull1, pull0) gpio[i + 8] = gpio[i];
     end
 
+    // Timers: cap_in[0] = pwm_out[0], cap_in[1] = pwm_out[cap1_sel]
+    wire  [3:0] pwm;
+    wire  [1:0] cap;
+    logic [1:0] cap1_sel = 2'd1;
+    assign cap = {pwm[cap1_sel], pwm[0]};
+
     pullup (i2c_scl);
     pullup (i2c_sda);
 
@@ -100,6 +107,8 @@ module tb_top;
         .spi_miso    (spi_miso),
         .spi_cs_n    (spi_cs_n),
         .gpio        (gpio),
+        .pwm_out     (pwm),
+        .cap_in      (cap),
         .seg         (seg),
         .dp          (dp),
         .an          (an)
@@ -287,6 +296,8 @@ module tb_top;
                 u_i2c_target.stretch_ns = 1000 * `PRB_ST_DATA[7:0];
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:8] == 24'h6) begin
                 u_i2c_target.al_bit = `PRB_ST_DATA[7:0];
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:8] == 24'h7) begin
+                cap1_sel <= `PRB_ST_DATA[1:0];
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:8] == 24'h8) begin
                 u_i2c_target.hog_kind = `PRB_ST_DATA[7];
                 u_i2c_target.hog_ns   = 1000 * `PRB_ST_DATA[6:0];

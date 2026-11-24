@@ -36,6 +36,9 @@
 #define SPI_BASE    0xC0002000
 #define I2C_BASE    0xC0003000
 #define GPIO_BASE   0xC0004000
+#define TIMER_BASE  0xC0005000
+// Timer capture channel 1 input = pwm_out[n] (reset: n = 1)
+#define SIM_CAP1_SEL        0x700
 // I2C target model: stretch SCL n us after every ACK clock (0 = off);
 // act as a second master and take SDA at address bit k (0 = MSB).
 #define SIM_I2C_STRETCH     0x500

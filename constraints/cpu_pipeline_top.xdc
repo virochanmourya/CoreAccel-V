@@ -215,5 +215,20 @@ set_false_path -to   [get_ports {gpio[*]}]
 set_false_path -from [get_ports {gpio[*]}]
 
 ## ============================================================================
+## 11. TIMERS (APB slot 5) — PROVISIONAL pin choice, Pmod JA
+## ============================================================================
+## pwm_out[0..3] = JA1, JA2, JA7, JA8; cap_in[0..1] = JA9, JA10
+## (JA3/JA4 = I2C SDA/SCL). Capture inputs are 2-FF synchronised; PWM
+## outputs are registered and slow.
+set_property -dict { PACKAGE_PIN J1   IOSTANDARD LVCMOS33 } [get_ports {pwm_out[0]}]
+set_property -dict { PACKAGE_PIN L2   IOSTANDARD LVCMOS33 } [get_ports {pwm_out[1]}]
+set_property -dict { PACKAGE_PIN H1   IOSTANDARD LVCMOS33 } [get_ports {pwm_out[2]}]
+set_property -dict { PACKAGE_PIN K2   IOSTANDARD LVCMOS33 } [get_ports {pwm_out[3]}]
+set_property -dict { PACKAGE_PIN H2   IOSTANDARD LVCMOS33 } [get_ports {cap_in[0]}]
+set_property -dict { PACKAGE_PIN G3   IOSTANDARD LVCMOS33 } [get_ports {cap_in[1]}]
+set_false_path -to   [get_ports {pwm_out[*]}]
+set_false_path -from [get_ports {cap_in[*]}]
+
+## ============================================================================
 ## END OF CONSTRAINTS
 ## ============================================================================

@@ -15,7 +15,9 @@ module cpu_pipeline_top #(
     parameter bit    SEG_EN     = 1'b1,    // 7-segment controller (FPGA board only)
     parameter int    BUS_TIMEOUT = 256,    // cycles before a bus access faults
     parameter int    SPI_NCS    = 2,       // SPI chip selects
-    parameter int    GPIO_W     = 16       // GPIO pins
+    parameter int    GPIO_W     = 16,      // GPIO pins
+    parameter int    TMR_NPWM   = 4,       // PWM outputs
+    parameter int    TMR_NCAP   = 2        // input-capture pins
 )(
     input  logic       clk,
     input  logic       reset,
@@ -43,6 +45,10 @@ module cpu_pipeline_top #(
 
     // GPIO (APB slot 4, tri-state)
     inout  wire  [GPIO_W-1:0]  gpio,
+
+    // Timers: PWM outputs and capture inputs (APB slot 5)
+    output logic [TMR_NPWM-1:0] pwm_out,
+    input  logic [TMR_NCAP-1:0] cap_in,
 
     // 7-Segment Display (Hardware Multiplexed)
     output logic [6:0] seg,
@@ -926,7 +932,9 @@ module cpu_pipeline_top #(
         .BAUD_RATE (115_200),
         .SEG_EN    (SEG_EN),
         .SPI_NCS   (SPI_NCS),
-        .GPIO_W    (GPIO_W)
+        .GPIO_W    (GPIO_W),
+        .TMR_NPWM  (TMR_NPWM),
+        .TMR_NCAP  (TMR_NCAP)
     ) u_periph (
         .clk       (clk),
         .reset     (reset),
@@ -960,6 +968,8 @@ module cpu_pipeline_top #(
         .gpio_out      (gpio_out),
         .gpio_oe       (gpio_oe),
         .gpio_in       (gpio_in),
+        .pwm_out       (pwm_out),
+        .cap_in        (cap_in),
         .plic_eip      (plic_eip)
     );
 
