@@ -11,9 +11,11 @@
 //          slot 0  0xC000_0000  legacy page (GPIO bit-bang I2C, UART TX, 7-seg)
 //          slot 1  0xC000_1000  UART0 (TX/RX, FIFOs, irq)
 //          slot 2  0xC000_2000  SPI master (modes 0-3, FIFOs, NCS chip selects)
-//          3..15                reserved: PSLVERR
+//          slot 3  0xC000_3000  I2C master (byte commands; shares the pads
+//                               with the legacy bit-bang latch, reset = bit-bang)
+//          4..15                reserved: PSLVERR
 //          PLIC    0xC400_0000  standard layout, sources 1..16
-//                               (UART0 = 1, SPI = 2)
+//                               (UART0 = 1, SPI = 2, I2C = 3)
 //   The core-local words of slot 0 (mtimer 0x100-0x10F, tohost 0xFFC) are
 //   answered inside the core and never reach this bus.
 //
@@ -31,6 +33,7 @@ module periph_subsys #(
     parameter int UART0_FIFO_DEPTH = 16,
     parameter int SPI_FIFO_DEPTH = 8,
     parameter int SPI_NCS        = 2,
+    parameter int I2C_PRESC_RESET = CLK_FREQ / (4 * 100_000) - 1,   // 100 kHz
     parameter int PLIC_NSRC  = 16,
     parameter int PLIC_PRIO_W = 3
 )(
@@ -91,14 +94,15 @@ module periph_subsys #(
     output logic        plic_eip
 );
 
-    // PLIC source map: 1 = UART0, 2 = SPI; 3..PLIC_NSRC reserved (I2C,
-    // GPIO, timers, DMA in later steps).
-    logic                 uart0_irq, spi_irq;
+    // PLIC source map: 1 = UART0, 2 = SPI, 3 = I2C; 4..PLIC_NSRC reserved
+    // (GPIO, timers, DMA in later steps).
+    logic                 uart0_irq, spi_irq, i2c_irq;
     logic [PLIC_NSRC:1]   irq_src;
     always_comb begin
         irq_src    = '0;
         irq_src[1] = uart0_irq;
         irq_src[2] = spi_irq;
+        irq_src[3] = i2c_irq;
     end
 
     // ------------------------------------------------------------ AXI demux
@@ -151,6 +155,7 @@ module periph_subsys #(
     localparam int P_LEGACY = 0;
     localparam int P_UART0  = 1;
     localparam int P_SPI    = 2;
+    localparam int P_I2C    = 3;
     localparam int P_PLIC   = NSLOT;
 
     logic [31:0]         paddr, pwdata;
@@ -187,7 +192,8 @@ module periph_subsys #(
     );
 
     // ------------------------------------------------------------ APB slaves
-    // Slot 0: legacy page
+    // Slot 0: legacy page (its SCL/SDA latch goes through the pad mux below)
+    logic bb_scl_low, bb_sda_low;
     apb_legacy_page #(
         .CLK_FREQ  (CLK_FREQ),
         .BAUD_RATE (BAUD_RATE),
@@ -197,7 +203,7 @@ module periph_subsys #(
         .psel (psel[P_LEGACY]), .penable (s_penable), .pwrite (pwrite), .paddr (paddr),
         .pwdata (pwdata), .prdata (prdata[P_LEGACY]), .pready (pready_raw[P_LEGACY]),
         .pslverr (pslverr[P_LEGACY]),
-        .scl_drive_low (scl_drive_low), .sda_drive_low (sda_drive_low),
+        .scl_drive_low (bb_scl_low), .sda_drive_low (bb_sda_low),
         .scl_pad_in (scl_pad_in), .sda_pad_in (sda_pad_in),
         .uart_tx_out (uart_tx_out), .seg (seg), .dp (dp), .an (an)
     );
@@ -228,6 +234,23 @@ module periph_subsys #(
         .irq (spi_irq)
     );
 
+    // Slot 3: I2C master, and the SCL/SDA pad mux (reset: bit-bang latch)
+    logic hw_scl_low, hw_sda_low, i2c_pad_sel;
+    apb_i2c #(
+        .PRESC_RESET (I2C_PRESC_RESET)
+    ) u_i2c (
+        .clk (clk), .reset (reset),
+        .psel (psel[P_I2C]), .penable (s_penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_I2C]), .pready (pready_raw[P_I2C]),
+        .pslverr (pslverr[P_I2C]),
+        .scl_drive_low (hw_scl_low), .sda_drive_low (hw_sda_low),
+        .scl_pad_in (scl_pad_in), .sda_pad_in (sda_pad_in),
+        .pad_sel (i2c_pad_sel),
+        .irq (i2c_irq)
+    );
+    assign scl_drive_low = i2c_pad_sel ? hw_scl_low : bb_scl_low;
+    assign sda_drive_low = i2c_pad_sel ? hw_sda_low : bb_sda_low;
+
     // PLIC (its own APB select)
     apb_plic #(
         .NSRC   (PLIC_NSRC),
@@ -242,7 +265,7 @@ module periph_subsys #(
 
     // Unused selects: answer PSLVERR at once.
     generate
-        for (genvar i = 3; i < NSLOT; i++) begin : g_empty
+        for (genvar i = 4; i < NSLOT; i++) begin : g_empty
             assign prdata[i]  = '0;
             assign pready_raw[i] = 1'b1;
             assign pslverr[i] = 1'b1;
@@ -251,6 +274,6 @@ module periph_subsys #(
 
     // PSTRB/PPROT: the slaves are word registers (lane-replicated data).
     logic unused;
-    assign unused = ^{pstrb, pprot, psel[NSLOT-1:3]};
+    assign unused = ^{pstrb, pprot, psel[NSLOT-1:4]};
 
 endmodule

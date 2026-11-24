@@ -34,6 +34,15 @@
 #define SIM_SPI_ECHO_MODE   0x400
 #define UART0_BASE  0xC0001000
 #define SPI_BASE    0xC0002000
+#define I2C_BASE    0xC0003000
+// I2C target model: stretch SCL n us after every ACK clock (0 = off);
+// act as a second master and take SDA at address bit k (0 = MSB).
+#define SIM_I2C_STRETCH     0x500
+#define SIM_I2C_ARB         0x600
+// I2C bus hog for n us: SDA stuck low without a START / another master
+// holding the bus (START, then both lines high), then released (STOP).
+#define SIM_I2C_HOG_SDA     0x800
+#define SIM_I2C_HOG_BUS     0x880
 #define PLIC_BASE   0xC4000000
 // Signature slots; a test with more checks defines SIG_WORDS before the include.
 #ifndef SIG_WORDS

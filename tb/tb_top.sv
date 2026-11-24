@@ -31,6 +31,10 @@
 //   0x2xx -> the same with a low stop bit (framing error),
 //   0x300 / 0x301 -> UART0 external loopback (RX pin = TX pin) on / off,
 //   0x40m -> SPI echo target (CS1) mode m = {CPOL, CPHA},
+//   0x5nn -> I2C target stretches SCL nn us after every ACK clock (0 = off),
+//   0x6kk -> I2C target acts as a second master at address bit kk,
+//   0x8nn -> I2C bus hog for nn us: nn < 0x80 SDA stuck low (no START),
+//            nn >= 0x80 another master holds the bus (START, lines high),
 //   any other value -> halt and check (TEST_END stores 0).
 // Output ends with exactly one line:
 //   RESULT PASS|FAIL|TIMEOUT test=<name> cycles=<n> ...
@@ -268,6 +272,14 @@ module tb_top;
                 uart0_loop = 1'b0;
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:2] == 30'h100) begin
                 spi_echo_mode <= `PRB_ST_DATA[1:0];
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:8] == 24'h5) begin
+                u_i2c_target.stretch_ns = 1000 * `PRB_ST_DATA[7:0];
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:8] == 24'h6) begin
+                u_i2c_target.al_bit = `PRB_ST_DATA[7:0];
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:8] == 24'h8) begin
+                u_i2c_target.hog_kind = `PRB_ST_DATA[7];
+                u_i2c_target.hog_ns   = 1000 * `PRB_ST_DATA[6:0];
+                u_i2c_target.hog_go   = 1'b1;
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
                 halted = 1'b1;
                 fork check_and_finish(); join_none
