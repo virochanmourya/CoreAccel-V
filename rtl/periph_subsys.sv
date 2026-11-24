@@ -11,7 +11,7 @@
 //          slot 0  0xC000_0000  legacy page (GPIO bit-bang I2C, UART TX, 7-seg)
 //          slot 1  0xC000_1000  UART0 (TX/RX, FIFOs, irq)
 //          2..15                reserved: PSLVERR
-//          PLIC    0xC400_0000  (step 4; PSLVERR until then)
+//          PLIC    0xC400_0000  standard layout, sources 1..16 (UART0 = 1)
 //   The core-local words of slot 0 (mtimer 0x100-0x10F, tohost 0xFFC) are
 //   answered inside the core and never reach this bus.
 //
@@ -23,7 +23,9 @@ module periph_subsys #(
     parameter int CLK_FREQ  = 100_000_000,
     parameter int BAUD_RATE = 115_200,
     parameter bit SEG_EN    = 1'b1,
-    parameter int UART0_FIFO_DEPTH = 16
+    parameter int UART0_FIFO_DEPTH = 16,
+    parameter int PLIC_NSRC  = 16,
+    parameter int PLIC_PRIO_W = 3
 )(
     input  logic        clk,
     input  logic        reset,
@@ -74,9 +76,18 @@ module periph_subsys #(
     output logic        uart0_txd,
     input  logic        uart0_rxd,       // asynchronous
 
-    // ---- Interrupt sources (PLIC) ----
-    output logic        uart0_irq
+    // ---- PLIC output (to the core's MEIP) ----
+    output logic        plic_eip
 );
+
+    // PLIC source map: 1 = UART0; 2..PLIC_NSRC reserved (SPI, I2C, GPIO,
+    // timers, DMA in later phases).
+    logic                 uart0_irq;
+    logic [PLIC_NSRC:1]   irq_src;
+    always_comb begin
+        irq_src    = '0;
+        irq_src[1] = uart0_irq;
+    end
 
     // ------------------------------------------------------------ AXI demux
     localparam int NS = 1;      // slave 0: APB bridge
@@ -186,9 +197,21 @@ module periph_subsys #(
         .txd (uart0_txd), .rxd (uart0_rxd), .irq (uart0_irq)
     );
 
+    // PLIC (its own APB select)
+    apb_plic #(
+        .NSRC   (PLIC_NSRC),
+        .PRIO_W (PLIC_PRIO_W)
+    ) u_plic (
+        .clk (clk), .reset (reset),
+        .psel (psel[P_PLIC]), .penable (penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_PLIC]), .pready (pready[P_PLIC]),
+        .pslverr (pslverr[P_PLIC]),
+        .src (irq_src), .eip (plic_eip)
+    );
+
     // Unused selects: answer PSLVERR at once.
     generate
-        for (genvar i = 2; i < NP; i++) begin : g_empty
+        for (genvar i = 2; i < NSLOT; i++) begin : g_empty
             assign prdata[i]  = '0;
             assign pready[i]  = 1'b1;
             assign pslverr[i] = 1'b1;
@@ -197,6 +220,6 @@ module periph_subsys #(
 
     // PSTRB/PPROT: the slaves are word registers (lane-replicated data).
     logic unused;
-    assign unused = ^{pstrb, pprot, psel[NP-1:2], P_PLIC};
+    assign unused = ^{pstrb, pprot, psel[NSLOT-1:2]};
 
 endmodule

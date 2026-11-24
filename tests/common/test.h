@@ -31,6 +31,7 @@
 #define SIM_UART0_LOOP_ON   0x300
 #define SIM_UART0_LOOP_OFF  0x301
 #define UART0_BASE  0xC0001000
+#define PLIC_BASE   0xC4000000
 // Signature slots; a test with more checks defines SIG_WORDS before the include.
 #ifndef SIG_WORDS
 #define SIG_WORDS   128

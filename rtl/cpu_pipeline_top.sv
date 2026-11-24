@@ -147,7 +147,6 @@ module cpu_pipeline_top #(
 
     logic        scl_pad_in, sda_pad_in;     // raw pad levels (asynchronous)
     logic        scl_drive_low, sda_drive_low;
-    logic        uart0_irq;                  // UART0 interrupt (PLIC source 1, step 4)
     logic [3:0]  ex_mem_strb;                // store byte lanes in MEM (AXI WSTRB)
 
     // ---- AXI4 data-bus master port (MEM) ----
@@ -216,6 +215,8 @@ module cpu_pipeline_top #(
     // in MEM with mepc = its PC), so an interrupt never cuts into an op held
     // in EX: the tagged instruction simply waits in ID behind it.
     logic        ext_irq;                   // external interrupt request (level)
+    logic        plic_eip;                  // PLIC: context 0 (M-mode) interrupt
+    logic        sim_irq;                   // simulation-only line, tied 0 (the harness forces it)
     (* ASYNC_REG = "TRUE" *) logic [1:0] ext_irq_sync;
     logic        meip;                      // synchronised external line
     logic        mtip;                      // timer compare (registered in mtimer)
@@ -937,12 +938,8 @@ module cpu_pipeline_top #(
         .an            (an),
         .uart0_txd     (uart0_tx_out),
         .uart0_rxd     (uart0_rx_in),
-        .uart0_irq     (uart0_irq)
+        .plic_eip      (plic_eip)
     );
-
-    // UART0's interrupt reaches the core through the PLIC (next step).
-    logic unused_uart0_irq;
-    assign unused_uart0_irq = uart0_irq;
 
     // ---- Open-drain I2C pads (driven by the legacy page's GPIO latch) ----
     od_pad u_scl_pad (.drive_low(scl_drive_low), .pad_in(scl_pad_in), .pad(i2c_scl));
@@ -977,9 +974,13 @@ module cpu_pipeline_top #(
         .mtip  (mtip)
     );
 
-    // External interrupt: one level-sensitive input, tied off here until the
-    // DMA engine drives it. 2-FF synchroniser (the source may be asynchronous).
-    assign ext_irq = 1'b0;
+    // External interrupt: one level-sensitive line into a 2-FF synchroniser
+    // (kept although the PLIC is synchronous: sim_irq / future pins may not be).
+    // MEIP comes from the PLIC (peripheral interrupts, e.g. UART0 = source 1).
+    // sim_irq is a direct line kept for the harness's external-interrupt
+    // tests (tied 0 in the design). Both are ORed before the synchroniser.
+    assign sim_irq = 1'b0;
+    assign ext_irq = plic_eip | sim_irq;
     always_ff @(posedge clk) begin
         if (reset) ext_irq_sync <= 2'b00;
         else       ext_irq_sync <= {ext_irq_sync[0], ext_irq};
