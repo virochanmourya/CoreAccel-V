@@ -21,14 +21,18 @@
 //                             STOP. Ignored while a command runs, unless
 //                             EN = 1 and PAD_SEL = 1, and unless it has START
 //                             or we own the bus (a byte or STOP on a bus we
-//                             do not hold would drive SDA while SCL is high);
-//                             WRITE wins over READ. Reads 0.
+//                             do not hold would drive SDA while SCL is high;
+//                             that case sets STATUS.IGN); WRITE wins over
+//                             READ. Reads 0.
 //   0x14    STATUS    R       bit0 TIP (command in progress), bit1 RXACK (ACK
 //                             bit of the last WRITE: 1 = NACK), bit2 AL (sticky),
 //                             bit3 BUS_BUSY (START seen, no STOP yet), bit4 DONE
 //                             (sticky: a command finished), bit5 NACKF (sticky:
-//                             a WRITE got NACK), bit6 OWN (we hold the bus)
-//                     W       write 1 to bits 2 / 4 / 5 clears them
+//                             a WRITE got NACK), bit6 OWN (we hold the bus),
+//                             bit7 IGN (sticky: a byte or STOP command was
+//                             ignored because we do not own the bus; set only
+//                             when it would otherwise have been accepted)
+//                     W       write 1 to bits 2 / 4 / 5 / 7 clears them
 //   0x18    IE        RW      bit0 DONE, bit1 NACKF, bit2 AL
 //   0x1C    IP        R       {AL, NACKF, DONE}
 //   other               PSLVERR
@@ -91,7 +95,7 @@ module apb_i2c #(
     logic [PRESC_W-1:0] presc;
     logic [7:0]         txdata, rxdata;
     logic [2:0]         ie;
-    logic               al, done, nackf, rxack;
+    logic               al, done, nackf, rxack, ign;
 
     // ------------------------------------------------------------ pad inputs
     (* ASYNC_REG = "TRUE" *) logic [1:0] scl_sync, sda_sync;
@@ -134,7 +138,7 @@ module apb_i2c #(
     logic [7:0]         sh;
     logic               tip;
 
-    logic cmd_wr, go, busy_any;
+    logic cmd_wr, go, busy_any, cmd_ok, ev_ign;
     logic ev_al, ev_done, ev_nack;      // one-cycle event pulses (registered)
     logic c_start_in, c_stop_in, c_write_in, c_read_in;
     assign cmd_wr     = wr & hit & (word == 5'd4);
@@ -145,8 +149,9 @@ module apb_i2c #(
     assign tip        = (st != E_IDLE);
     // TIP covers the event cycle too, so TIP = 0 implies the sticky flags are set.
     assign busy_any   = tip | ev_al | ev_done | ev_nack;
-    assign go         = cmd_wr & en & pad_sel & ~busy_any & (|pwdata[3:0]) &
-                        (c_start_in | own);
+    assign cmd_ok     = cmd_wr & en & pad_sel & ~busy_any & (|pwdata[3:0]);
+    assign go         = cmd_ok & (c_start_in | own);
+    assign ev_ign     = cmd_ok & ~c_start_in & ~own;
 
     // A quarter elapses when the counter runs out; while the master releases
     // SCL and the line still reads low (stretched, or not yet risen), it waits.
@@ -305,6 +310,7 @@ module apb_i2c #(
             al      <= 1'b0;
             done    <= 1'b0;
             nackf   <= 1'b0;
+            ign     <= 1'b0;
         end else begin
             if (wr && hit && word == 5'd0) begin
                 en      <= pwdata[0];
@@ -320,11 +326,13 @@ module apb_i2c #(
                 if (pwdata[2]) al    <= 1'b0;
                 if (pwdata[4]) done  <= 1'b0;
                 if (pwdata[5]) nackf <= 1'b0;
+                if (pwdata[7]) ign   <= 1'b0;
             end
             // Events win over a clear in the same cycle.
             if (ev_al)   al    <= 1'b1;
             if (ev_done) done  <= 1'b1;
             if (ev_nack) nackf <= 1'b1;
+            if (ev_ign)  ign   <= 1'b1;
         end
     end
 
@@ -340,7 +348,7 @@ module apb_i2c #(
             5'd1: prdata = 32'(presc);
             5'd2: prdata = {24'b0, txdata};
             5'd3: prdata = {24'b0, rxdata};
-            5'd5: prdata = {25'b0, own, nackf, done, bus_busy, al, rxack, busy_any};
+            5'd5: prdata = {24'b0, ign, own, nackf, done, bus_busy, al, rxack, busy_any};
             5'd6: prdata = {29'b0, ie};
             5'd7: prdata = {29'b0, ip};
             default: prdata = '0;

@@ -5,6 +5,8 @@
 // - register writes (pointer + 2 bytes, STOP), read back with a repeated
 //   START: ACK, ACK, NACK + STOP
 // - NACK from an absent address (RXACK, sticky NACKF, W1C)
+// - a byte or STOP without START on a bus we do not own: ignored, sticky
+//   IGN (W1C); not set by a command ignored for EN = 0
 // - clock stretching by the target: the byte waits, data still correct
 // - arbitration lost to a second master in the address byte, and a START
 //   asked for while the other master holds the bus; recovery afterwards
@@ -26,6 +28,7 @@
 #define ST_DONE       0x10
 #define ST_NACKF      0x20
 #define ST_OWN        0x40
+#define ST_IGN        0x80
 
     EXPECT_DBUS_ERRORS 1
     EXPECT_OTHER_TRAPS 1
@@ -104,6 +107,8 @@
     sw      zero, 0x18(a4)
     li      t0, I2C_START | I2C_WRITE
     sw      t0, 0x10(a4)                // EN = 0: ignored
+    li      t0, I2C_STOP
+    sw      t0, 0x10(a4)                // EN = 0: ignored, IGN stays 0
     lw      t0, 0x14(a4)
     CHECK   t0, 0
 
@@ -165,15 +170,30 @@
     sw      t0, 0x14(a4)
     lw      t0, 0x14(a4)
     CHECK   t0, ST_RXACK                // RXACK is a level, not sticky
-    // a byte or STOP without START on a bus we do not own: ignored
+    // a byte or STOP without START on a bus we do not own: ignored, IGN set
+    // (each kind on its own, IGN cleared in between)
     li      t0, I2C_STOP
     sw      t0, 0x10(a4)
+    lw      t0, 0x14(a4)
+    CHECK   t0, ST_IGN | ST_RXACK       // no TIP, no DONE, no START seen
+    li      t0, ST_IGN
+    sw      t0, 0x14(a4)                // W1C
+    lw      t0, 0x14(a4)
+    CHECK   t0, ST_RXACK
     li      t0, I2C_WRITE | I2C_STOP
     sw      t0, 0x10(a4)
+    lw      t0, 0x14(a4)
+    CHECK   t0, ST_IGN | ST_RXACK
+    li      t0, ST_IGN
+    sw      t0, 0x14(a4)
     li      t0, I2C_READ
     sw      t0, 0x10(a4)
     lw      t0, 0x14(a4)
-    CHECK   t0, ST_RXACK                // no TIP, no DONE, no START seen
+    CHECK   t0, ST_IGN | ST_RXACK
+    li      t0, ST_IGN
+    sw      t0, 0x14(a4)
+    lw      t0, 0x14(a4)
+    CHECK   t0, ST_RXACK
 
     // ---- EN = 0 aborts a command at once ----
     li      t0, 1000
@@ -182,6 +202,8 @@
     sw      t0, 0x08(a4)
     li      t0, I2C_START | I2C_WRITE
     sw      t0, 0x10(a4)
+    li      t0, I2C_STOP
+    sw      t0, 0x10(a4)                // busy: ignored, IGN stays 0
     lw      t0, 0x14(a4)
     CHECK   t0, ST_TIP | ST_RXACK       // running
     li      t0, 2
