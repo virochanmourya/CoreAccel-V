@@ -14,7 +14,8 @@ module cpu_pipeline_top #(
     parameter int    CLK_FREQ   = 100_000_000,
     parameter bit    SEG_EN     = 1'b1,    // 7-segment controller (FPGA board only)
     parameter int    BUS_TIMEOUT = 256,    // cycles before a bus access faults
-    parameter int    SPI_NCS    = 2        // SPI chip selects
+    parameter int    SPI_NCS    = 2,       // SPI chip selects
+    parameter int    GPIO_W     = 16       // GPIO pins
 )(
     input  logic       clk,
     input  logic       reset,
@@ -39,6 +40,9 @@ module cpu_pipeline_top #(
     output logic       spi_mosi,
     input  logic       spi_miso,
     output logic [SPI_NCS-1:0] spi_cs_n,
+
+    // GPIO (APB slot 4, tri-state)
+    inout  wire  [GPIO_W-1:0]  gpio,
 
     // 7-Segment Display (Hardware Multiplexed)
     output logic [6:0] seg,
@@ -915,11 +919,14 @@ module cpu_pipeline_top #(
         .m_rresp   (axi_rresp),   .m_rlast   (axi_rlast),   .m_rid     (axi_rid)
     );
 
+    logic [GPIO_W-1:0] gpio_out, gpio_oe, gpio_in;   // GPIO pad side
+
     periph_subsys #(
         .CLK_FREQ  (CLK_FREQ),
         .BAUD_RATE (115_200),
         .SEG_EN    (SEG_EN),
-        .SPI_NCS   (SPI_NCS)
+        .SPI_NCS   (SPI_NCS),
+        .GPIO_W    (GPIO_W)
     ) u_periph (
         .clk       (clk),
         .reset     (reset),
@@ -950,12 +957,20 @@ module cpu_pipeline_top #(
         .spi_mosi      (spi_mosi),
         .spi_miso      (spi_miso),
         .spi_cs_n      (spi_cs_n),
+        .gpio_out      (gpio_out),
+        .gpio_oe       (gpio_oe),
+        .gpio_in       (gpio_in),
         .plic_eip      (plic_eip)
     );
 
     // ---- Open-drain I2C pads (driven by the legacy page's GPIO latch) ----
     od_pad u_scl_pad (.drive_low(scl_drive_low), .pad_in(scl_pad_in), .pad(i2c_scl));
     od_pad u_sda_pad (.drive_low(sda_drive_low), .pad_in(sda_pad_in), .pad(i2c_sda));
+
+    // ---- GPIO pads (tri-state) ----
+    for (genvar i = 0; i < GPIO_W; i++) begin : g_gpio_pad
+        io_pad u_pad (.oe(gpio_oe[i]), .out(gpio_out[i]), .pad_in(gpio_in[i]), .pad(gpio[i]));
+    end
 
     // TCM: dual-port memory behind its wrapper
     tcm_wrap #(

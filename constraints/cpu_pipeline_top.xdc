@@ -188,5 +188,32 @@ set_false_path -to [get_ports dp]
 set_false_path -to [get_ports {an[*]}]
 
 ## ============================================================================
+## 10. GPIO (APB slot 4) — PROVISIONAL pin choice
+## ============================================================================
+## gpio[0..6]  = Pmod JB2, JB3, JB4, JB7, JB8, JB9, JB10 (JB1 = legacy UART TX)
+## gpio[7..9]  = Pmod JC8, JC9, JC10 (JC1-4, JC7 = SPI)
+## gpio[10..15] = Pmod JXADC1, 2, 3, 4, 7, 8 (used as digital LVCMOS33)
+## Pins per the Digilent Basys 3 master XDC. Inputs are 2-FF synchronised
+## inside apb_gpio, outputs are slow, so no I/O timing applies.
+set_property -dict { PACKAGE_PIN A16  IOSTANDARD LVCMOS33 } [get_ports {gpio[0]}]
+set_property -dict { PACKAGE_PIN B15  IOSTANDARD LVCMOS33 } [get_ports {gpio[1]}]
+set_property -dict { PACKAGE_PIN B16  IOSTANDARD LVCMOS33 } [get_ports {gpio[2]}]
+set_property -dict { PACKAGE_PIN A15  IOSTANDARD LVCMOS33 } [get_ports {gpio[3]}]
+set_property -dict { PACKAGE_PIN A17  IOSTANDARD LVCMOS33 } [get_ports {gpio[4]}]
+set_property -dict { PACKAGE_PIN C15  IOSTANDARD LVCMOS33 } [get_ports {gpio[5]}]
+set_property -dict { PACKAGE_PIN C16  IOSTANDARD LVCMOS33 } [get_ports {gpio[6]}]
+set_property -dict { PACKAGE_PIN M19  IOSTANDARD LVCMOS33 } [get_ports {gpio[7]}]
+set_property -dict { PACKAGE_PIN P17  IOSTANDARD LVCMOS33 } [get_ports {gpio[8]}]
+set_property -dict { PACKAGE_PIN R18  IOSTANDARD LVCMOS33 } [get_ports {gpio[9]}]
+set_property -dict { PACKAGE_PIN J3   IOSTANDARD LVCMOS33 } [get_ports {gpio[10]}]
+set_property -dict { PACKAGE_PIN L3   IOSTANDARD LVCMOS33 } [get_ports {gpio[11]}]
+set_property -dict { PACKAGE_PIN M2   IOSTANDARD LVCMOS33 } [get_ports {gpio[12]}]
+set_property -dict { PACKAGE_PIN N2   IOSTANDARD LVCMOS33 } [get_ports {gpio[13]}]
+set_property -dict { PACKAGE_PIN K3   IOSTANDARD LVCMOS33 } [get_ports {gpio[14]}]
+set_property -dict { PACKAGE_PIN M3   IOSTANDARD LVCMOS33 } [get_ports {gpio[15]}]
+set_false_path -to   [get_ports {gpio[*]}]
+set_false_path -from [get_ports {gpio[*]}]
+
+## ============================================================================
 ## END OF CONSTRAINTS
 ## ============================================================================

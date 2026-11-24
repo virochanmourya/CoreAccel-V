@@ -70,6 +70,16 @@ module tb_top;
     logic [1:0] spi_echo_mode = 2'b00;
     pullup (spi_miso);
 
+    // GPIO: weak pull-downs on every pin; gpio[7:0] drives gpio[15:8] at
+    // pull strength (a pin the DUT drives itself wins).
+    wire [15:0] gpio;
+    for (genvar i = 0; i < 16; i++) begin : g_gpio_pd
+        pulldown (weak0) u_pd (gpio[i]);
+    end
+    for (genvar i = 0; i < 8; i++) begin : g_gpio_loop
+        assign (pull1, pull0) gpio[i + 8] = gpio[i];
+    end
+
     pullup (i2c_scl);
     pullup (i2c_sda);
 
@@ -89,6 +99,7 @@ module tb_top;
         .spi_mosi    (spi_mosi),
         .spi_miso    (spi_miso),
         .spi_cs_n    (spi_cs_n),
+        .gpio        (gpio),
         .seg         (seg),
         .dp          (dp),
         .an          (an)

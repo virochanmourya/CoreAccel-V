@@ -35,6 +35,7 @@
 #define UART0_BASE  0xC0001000
 #define SPI_BASE    0xC0002000
 #define I2C_BASE    0xC0003000
+#define GPIO_BASE   0xC0004000
 // I2C target model: stretch SCL n us after every ACK clock (0 = off);
 // act as a second master and take SDA at address bit k (0 = MSB).
 #define SIM_I2C_STRETCH     0x500
