@@ -48,7 +48,11 @@ module core_sva (
     input logic [4:0]  ex_mem_rd_addr,
     input logic        ex_mem_reg_write,
     input logic [4:0]  mem_wb_rd_addr,
-    input logic        mem_wb_reg_write
+    input logic        mem_wb_reg_write,
+    // MAC: the accumulator is written in the last busy cycle (split add)
+    input logic        mac_busy_ex,
+    input logic        mac_to_reg_ex,
+    input logic        ex_hold
 );
     logic mem_tcm_store;
     // Same exact range as the EX-stage TCM write enable (0x8000_0000-0x8000_0FFF).
@@ -157,6 +161,16 @@ module core_sva (
         tb_top.sva_fail();
     end
 
+    // The MAC accumulate is split over its last two busy cycles, so nothing
+    // may read or clear the accumulator while the unit is busy.
+    a_mac_acc_idle_when_used: assert property (
+        @(posedge clk) disable iff (reset)
+        mac_busy_ex |-> !(mac_clear_commit || mac_rd64_strobe || (mac_to_reg_ex && !ex_hold))
+    ) else begin
+        $display("SVA FAIL a_mac_acc_idle_when_used t=%0t", $time);
+        tb_top.sva_fail();
+    end
+
     // A bubble in ID decodes to all-zero controls and raises no exception,
     // whatever stale instruction bits IF/ID holds.
     a_id_bubble_quiet: assert property (
@@ -220,5 +234,8 @@ bind cpu_pipeline_top core_sva u_core_sva (
     .ex_mem_rd_addr    (ex_mem_rd_addr),
     .ex_mem_reg_write  (ex_mem_reg_write),
     .mem_wb_rd_addr    (mem_wb_rd_addr),
-    .mem_wb_reg_write  (mem_wb_reg_write)
+    .mem_wb_reg_write  (mem_wb_reg_write),
+    .mac_busy_ex       (mac_busy_ex),
+    .mac_to_reg_ex     (mac_to_reg_ex),
+    .ex_hold           (ex_hold)
 );

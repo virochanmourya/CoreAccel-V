@@ -8,6 +8,11 @@
 //              saturates at the 72-bit range)
 //              The TCM port-B address is presented on the start cycle; the
 //              S_INPUT state absorbs the 1-cycle BRAM latency.
+//              The 72-bit accumulate is split over two cycles to halve the
+//              carry chain: S_MULTIPLY adds the low 36 bits and registers the
+//              carry, S_ACCUMULATE adds the high 36 bits, saturates and writes
+//              the accumulator. The accumulator is not observable in between
+//              (the op holds EX until the unit is idle again).
 //   READ_LO/HI sat64(acc)[31:0] / [63:32]  (combinational from acc_sat64)
 //   READ_SHIFT sat32(round_half_up(acc >>> shamt)), shamt = rs1[5:0]
 //              (multi-cycle: S_RS_ROUND then S_RS_SHIFT; result registered)
@@ -53,6 +58,8 @@ module mac_unit (
   logic signed [31:0] a_reg;
   logic signed [63:0] product_reg;
   logic signed [71:0] accumulator;
+  logic        [35:0] acc_lo_sum;      // S_MULTIPLY: low half of acc + product
+  logic               acc_lo_carry;    // ... and its carry into bit 36
   logic               overflow_flag;
   logic        [5:0]  shamt_reg;
   logic signed [72:0] rounded_reg;
@@ -97,11 +104,21 @@ module mac_unit (
   end
 
   // ---------------------------------------------------------------- accumulate
+  // Low half (S_MULTIPLY): acc[35:0] + product[35:0] -> acc_lo_sum, acc_lo_carry.
+  // High half (S_ACCUMULATE): acc[71:36] + sext(product)[71:36] + carry.
+  // product_reg and accumulator are unchanged between the two cycles.
+  logic signed [71:0] product_ext;
+  logic        [36:0] lo_sum_comb;
+  logic        [35:0] hi_sum_comb;
   logic signed [71:0] next_accum_comb;
   logic               accum_saturates;
 
+  assign product_ext = {{8{product_reg[63]}}, product_reg};
+  assign lo_sum_comb = {1'b0, accumulator[35:0]} + {1'b0, product_ext[35:0]};
+  assign hi_sum_comb = accumulator[71:36] + product_ext[71:36] + {35'd0, acc_lo_carry};
+
   always_comb begin
-    next_accum_comb = accumulator + {{8{product_reg[63]}}, product_reg};
+    next_accum_comb = {hi_sum_comb, acc_lo_sum};
     accum_saturates = 1'b0;
 
     // Overflow if both operands share a sign and the result's sign differs
@@ -130,6 +147,8 @@ module mac_unit (
     begin
       a_reg         <= 0;
       product_reg   <= 0;
+      acc_lo_sum    <= 0;
+      acc_lo_carry  <= 0;
       accumulator   <= 0;
       overflow_flag <= 0;
       shamt_reg     <= 0;
@@ -149,7 +168,15 @@ module mac_unit (
         S_INPUT:
           product_reg <= a_reg * tcm_data;
 
+        // Accumulate, low half
         S_MULTIPLY:
+        begin
+          acc_lo_sum   <= lo_sum_comb[35:0];
+          acc_lo_carry <= lo_sum_comb[36];
+        end
+
+        // Accumulate, high half + saturation
+        S_ACCUMULATE:
         begin
           accumulator <= next_accum_comb;
           if (accum_saturates) overflow_flag <= 1'b1;
