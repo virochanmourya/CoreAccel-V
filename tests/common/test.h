@@ -180,6 +180,13 @@ end_signature:
     .set    test_hold_ex_stores, \cycles
 .endm
 
+// Add \cycles wait states at the start of every data-bus access (harness
+// +BUS_WAIT). Takes precedence over a regression-wide WAIT=<n|rand>.
+.macro BUS_WAIT cycles
+    .globl  test_bus_wait
+    .set    test_bus_wait, \cycles
+.endm
+
 // Absolute address of a symbol, no PC-relative arithmetic.
 .macro LA_ABS reg, sym
     lui     \reg, %hi(\sym)

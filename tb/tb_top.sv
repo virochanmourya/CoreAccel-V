@@ -17,6 +17,10 @@
 //   +OTHER_TRAPS=<n>       expected traps with any other cause (default 0)
 //   +HOLD_EX_STORES=<n> hold every TCM store in EX for n cycles (forces the EX
 //                     hold) to check that a held store still writes exactly once
+//   +BUS_WAIT=<n>|rand add wait states to every data-bus access: n cycles at
+//                     the start of each access, or (rand) a random 1-in-3
+//                     chance on every cycle an access is in flight
+//   +BUS_SEED=<n>      seed for BUS_WAIT=rand (default 1)
 //
 // Simulation control word at HALT_ADDR (the RTL ignores writes there):
 //   store 1 -> raise the external interrupt line, store 2 -> drop it,
@@ -154,6 +158,48 @@ module tb_top;
         end
     end
 
+    // ---------------------------------------------------------------- bus wait hook
+    // Emulates a slow bus: forces the RTL hook net (tied to 0) high, which
+    // holds the bus response back. The pipeline must give the same results
+    // with any number of wait states.
+    string bus_wait_arg;
+    int    bus_wait_n = 0, bus_seed = 1, bus_waits = 0;
+    bit    bus_wait_rand = 1'b0, bus_hook = 1'b0;
+    bit    prev_stall = 1'b0;
+    initial begin
+        if ($value$plusargs("BUS_WAIT=%s", bus_wait_arg)) begin
+            if (bus_wait_arg == "rand") bus_wait_rand = 1'b1;
+            else                        bus_wait_n = bus_wait_arg.atoi();
+        end
+        if (!$value$plusargs("BUS_SEED=%d", bus_seed)) bus_seed = 1;
+        process::self().srandom(bus_seed);
+        bus_hook = bus_wait_rand || bus_wait_n > 0;
+        force `PRB_BUS_WAIT = 1'b0;
+        if (bus_hook) begin
+            forever begin
+                @(posedge clk); #1;
+                if (!reset && !halted && `PRB_BUS_BUSY) begin
+                    if (bus_wait_rand) begin
+                        if ($urandom_range(2) == 0) begin
+                            force `PRB_BUS_WAIT = 1'b1;
+                            bus_waits++;
+                        end else begin
+                            force `PRB_BUS_WAIT = 1'b0;
+                        end
+                    end else if (!prev_stall) begin     // first cycle of a new access
+                        force `PRB_BUS_WAIT = 1'b1;
+                        repeat (bus_wait_n) @(posedge clk);
+                        #1 force `PRB_BUS_WAIT = 1'b0;
+                        bus_waits += bus_wait_n;
+                    end
+                end else begin
+                    force `PRB_BUS_WAIT = 1'b0;
+                end
+                prev_stall = `PRB_MEM_STALL;
+            end
+        end
+    end
+
     // ---------------------------------------------------------------- halt / timeout
     always @(posedge clk) begin
         if (!reset && !halted) begin
@@ -222,8 +268,9 @@ module tb_top;
             $display("RESULT FAIL test=%s cycles=%0d sva_errors=%0d mismatches=%0d/%0d",
                      test_name, cycles, sva_errors, mismatches, sig_words);
         else if (mismatches == 0)
-            $display("RESULT PASS test=%s cycles=%0d checks=%0d%s", test_name, cycles, sig_words,
-                     hold_cycles > 0 ? $sformatf(" ex_holds=%0d", holds_done) : "");
+            $display("RESULT PASS test=%s cycles=%0d checks=%0d%s%s", test_name, cycles, sig_words,
+                     hold_cycles > 0 ? $sformatf(" ex_holds=%0d", holds_done) : "",
+                     bus_hook ? $sformatf(" bus_waits=%0d", bus_waits) : "");
         else
             $display("RESULT FAIL test=%s cycles=%0d mismatches=%0d/%0d",
                      test_name, cycles, mismatches, sig_words);

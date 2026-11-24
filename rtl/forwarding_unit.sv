@@ -19,6 +19,8 @@
 //                 MEM/WB producer <- the current EX/MEM instruction
 //               When EX is held (hold = 1): the EX instruction stays, EX/MEM
 //               gets a bubble and MEM/WB <- the current EX/MEM instruction.
+//               Under the global MEM stall (freeze = 1) nothing moves, so
+//               the selects keep their value.
 //
 //               Cases where the next-cycle producer is not exactly the current
 //               one (its register write is cleared on the way by an exception,
@@ -33,6 +35,7 @@ module forwarding_unit (
     input  logic       clk,
     input  logic       reset,
     input  logic       hold,              // EX held this cycle (ex_hold)
+    input  logic       freeze,            // global MEM stall: nothing moves
     // Next EX instruction's sources (the ID instruction)
     input  logic [4:0] id_rs1,
     input  logic [4:0] id_rs2,
@@ -64,7 +67,11 @@ module forwarding_unit (
     logic [1:0] fa_d, fb_d;
 
     always_comb begin
-        if (hold) begin
+        if (freeze) begin
+            // Every pipeline register holds: same consumer, same producers.
+            fa_d = forward_a;
+            fb_d = forward_b;
+        end else if (hold) begin
             // Same EX instruction; EX/MEM becomes a bubble.
             fa_d = sel_next(id_ex_rs1, 1'b0, 5'd0, ex_mem_reg_write, ex_mem_rd);
             fb_d = sel_next(id_ex_rs2, 1'b0, 5'd0, ex_mem_reg_write, ex_mem_rd);

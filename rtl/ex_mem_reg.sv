@@ -15,6 +15,7 @@ module ex_mem_reg (
     input  logic        clk,
     input  logic        reset,
     input  logic        flush,
+    input  logic        en,          // 0: hold (global MEM stall)
 
     // WB control
     input  logic        reg_write_in,
@@ -78,7 +79,7 @@ module ex_mem_reg (
             rd_addr_out     <= 5'd0;
             funct3_out      <= 3'd0;
         end
-        else begin
+        else if (en) begin
             is_mret_out <= is_mret_in;
             tval_out <= tval_in;
             pc_out <= pc_in;

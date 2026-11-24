@@ -11,6 +11,7 @@
 module mem_wb_reg (
     input  logic        clk,
     input  logic        reset,
+    input  logic        en,          // 0: hold (global MEM stall)
 
     // WB control signals
     input  logic        reg_write_in,
@@ -35,7 +36,7 @@ module mem_wb_reg (
             result_out      <= 32'd0;
             rd_addr_out     <= 5'd0;
         end
-        else begin
+        else if (en) begin
             valid_out <= valid_in;
             reg_write_out   <= reg_write_in;
             result_out      <= result_in;

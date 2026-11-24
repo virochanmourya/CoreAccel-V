@@ -54,7 +54,14 @@ module core_sva #(
     // MAC: the accumulator is written in the last busy cycle (split add)
     input logic        mac_busy_ex,
     input logic        mac_to_reg_ex,
-    input logic        ex_hold
+    input logic        ex_hold,
+    // Global MEM stall: frozen pipeline, no commits
+    input logic        mem_stall,
+    input logic        rf_we,
+    input logic [31:0] id_ex_pc,
+    input logic [31:0] ex_mem_pc,
+    input logic        mem_wb_valid,
+    input logic [31:0] mem_wb_result
 );
     logic mem_tcm_store;
     // Same exact range as the EX-stage TCM write enable.
@@ -174,6 +181,33 @@ module core_sva #(
         tb_top.sva_fail();
     end
 
+    // ---- Global MEM stall -----------------------------------------------
+    // While MEM waits for the bus, nothing commits and nothing traps: no
+    // TCM/CSR/register write, no multi-cycle start, no MAC accumulator
+    // update from EX. (A stalled access traps, if at all, when it ends.)
+    a_stall_no_commit: assert property (
+        @(posedge clk) disable iff (reset)
+        mem_stall |-> (!mem_trap && !mem_mret && tcm_wea == 4'b0 && !csr_commit &&
+                       !mac_start_pulse && !muldiv_start && !mac_clear_commit &&
+                       !mac_rd64_strobe && !rf_we)
+    ) else begin
+        $display("SVA FAIL a_stall_no_commit t=%0t", $time);
+        tb_top.sva_fail();
+    end
+    // ... and every instruction stays where it is (ID/EX, EX/MEM, MEM/WB
+    // and the forwarding selects hold).
+    a_stall_frozen: assert property (
+        @(posedge clk) disable iff (reset)
+        mem_stall |=> ($stable(id_ex_pc) && $stable(id_ex_valid) &&
+                       $stable(ex_mem_pc) && $stable(ex_mem_valid) &&
+                       $stable(ex_mem_alu_result) && $stable(ex_mem_mem_write) &&
+                       $stable(mem_wb_valid) && $stable(mem_wb_result) &&
+                       $stable(forward_a_sel) && $stable(forward_b_sel))
+    ) else begin
+        $display("SVA FAIL a_stall_frozen t=%0t", $time);
+        tb_top.sva_fail();
+    end
+
     // A bubble in ID decodes to all-zero controls and raises no exception,
     // whatever stale instruction bits IF/ID holds.
     a_id_bubble_quiet: assert property (
@@ -240,5 +274,11 @@ bind cpu_pipeline_top core_sva #(.TCM_AW(TCM_AW)) u_core_sva (
     .mem_wb_reg_write  (mem_wb_reg_write),
     .mac_busy_ex       (mac_busy_ex),
     .mac_to_reg_ex     (mac_to_reg_ex),
-    .ex_hold           (ex_hold)
+    .ex_hold           (ex_hold),
+    .mem_stall         (mem_stall),
+    .rf_we             (rf_we),
+    .id_ex_pc          (id_ex_pc),
+    .ex_mem_pc         (ex_mem_pc),
+    .mem_wb_valid      (mem_wb_valid),
+    .mem_wb_result     (mem_wb_result)
 );

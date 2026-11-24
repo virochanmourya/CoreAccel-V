@@ -110,13 +110,28 @@ module cpu_pipeline_top #(
 
     // ---- Data-bus decode / unmapped-access fault ----
     logic        is_periph_region; // MEM decode: 0xC000_0000..0xC000_0FFF
-    logic        is_periph_mapped; // A defined register inside the peripheral page
     logic        is_tohost; // 0xC000_0FFC: reserved simulation halt (writes ignored)
     logic        is_periph_page0; // 0xC000_0000..0xC000_000F: GPIO / UART / 7-seg
     logic        is_timer;  // 0xC000_0100..0xC000_010F: mtime / mtimecmp
     logic        timer_we;
     logic [31:0] timer_rdata;
     logic        mem_access; // Load or store in MEM
+    // ---- Data bus (MEM) and the global MEM stall ----
+    // A load/store in MEM that is not TCM or core-local (mtimer, tohost)
+    // is a bus access. It holds MEM until the bus answers: mem_stall
+    // freezes the whole pipeline (PC, IF/ID, ID/EX, EX/MEM, MEM/WB, the
+    // register-file write and instret) for that time.
+    logic        mem_core_local;   // MEM: mtimer page or tohost word (answered in the core)
+    logic        mem_is_bus;       // MEM: load/store that goes to the data bus
+    logic        bus_rsp_done;     // the bus access in MEM completes this cycle
+    logic        bus_rsp_err;      // ... with an error (access fault)
+    logic [31:0] bus_rsp_rdata;    // ... and this read data
+    logic        mem_stall;        // global stall: MEM waits for the bus
+    logic        ex_advance;       // the EX instruction leaves EX this cycle
+    logic        rf_we;            // register-file write (WB, not during a stall)
+    // Test hook, tied to 0: the testbench forces it to add bus wait states
+    // (+BUS_WAIT). Nothing but the bus response path reads it.
+    logic        bus_wait_inj;
     // ---- Unmapped data access (MEM): load/store access fault ----
     // Traps in MEM (cause 5 load / 7 store, mtval = address): rd is not
     // written and no peripheral or TCM write happens.
@@ -257,16 +272,27 @@ module cpu_pipeline_top #(
     assign ex_hold_src = mc_hold;
     assign ex_hold     = ex_hold_src;
 
+    // ---- Global MEM stall ----
+    // mem_stall freezes every pipeline register. The EX instruction leaves
+    // EX only when neither EX nor MEM holds it: every EX commit point (TCM
+    // store, CSR write, MAC_CLEAR, READ_LO/HI flag, multi-cycle issue
+    // bookkeeping) uses ex_advance. A trap/MRET in MEM never coincides with
+    // mem_stall (a stalled access traps, if at all, in its response cycle).
+    assign ex_advance = ~ex_hold & ~mem_stall;
+
     // A trap or MRET in MEM (mem_redirect) is older than everything in
     // IF/ID/EX: it wins over an EX redirect and over any hold, and flushes
     // IF/ID, ID/EX and EX/MEM (ex_kill blocks the EX instruction's commits).
-    assign pc_write        = ~(stall | ex_hold) | pc_redirect | mem_redirect;
+    // A branch/jump in EX during mem_stall keeps redirecting the PC and
+    // flushing IF/ID (both idempotent) but must not flush ID/EX: it is
+    // still in EX. The ID/EX bubble of a load-use stall waits likewise.
+    assign pc_write        = ~(stall | ex_hold | mem_stall) | pc_redirect | mem_redirect;
     // A flush wins over a stall in IF/ID, so pc_redirect is not needed here.
-    assign if_id_stall     = stall | ex_hold;
+    assign if_id_stall     = stall | ex_hold | mem_stall;
     assign if_id_flush     = pc_redirect | mem_redirect;
-    assign id_ex_flush     = stall | pc_redirect | mem_redirect;
-    assign id_ex_stall     = ex_hold;
-    assign ex_mem_flush_sig = ex_hold | ex_kill;
+    assign id_ex_flush     = ((stall | pc_redirect) & ~mem_stall) | mem_redirect;
+    assign id_ex_stall     = ex_hold | mem_stall;
+    assign ex_mem_flush_sig = (ex_hold & ~mem_stall) | ex_kill;
 
     // ========================================================================
     //  IF STAGE
@@ -367,7 +393,7 @@ module cpu_pipeline_top #(
     register_file u_regfile (
         .clk        (clk),
         .reset      (reset),
-        .we         (mem_wb_reg_write),
+        .we         (rf_we),
         .rs1        (id_rs1),
         .rs2        (id_rs2),
         .rd         (mem_wb_rd_addr),
@@ -483,6 +509,7 @@ module cpu_pipeline_top #(
         .clk              (clk),
         .reset            (reset),
         .hold             (ex_hold),
+        .freeze           (mem_stall),
         .id_rs1           (id_rs1),
         .id_rs2           (id_rs2),
         .id_ex_rs1        (id_ex_rs1_addr),
@@ -547,13 +574,16 @@ module cpu_pipeline_top #(
     assign mc_hold        = mc_op_ex & ~mc_done_ex;
 
     // A start in the cycle a trap/MRET is taken in MEM is killed: the op is
-    // younger and is flushed from EX, so its unit must never start.
-    assign mc_issue        = mc_start_pulse & ~ex_kill;
+    // younger and is flushed from EX, so its unit must never start. Nor
+    // does it start under mem_stall: the access in MEM may still fault.
+    assign mc_issue        = mc_start_pulse & ~ex_kill & ~mem_stall;
     assign mac_start_pulse = mc_issue & mac_op_ex;
     assign muldiv_start    = mc_issue & is_muldiv_ex;
 
+    // Cleared when the op leaves EX (ex_advance), not when its unit is done:
+    // a finished op frozen in EX by mem_stall must not be issued again.
     always_ff @(posedge clk) begin
-        if (reset || !mc_op_ex || !ex_hold)
+        if (reset || !mc_op_ex || ex_advance)
             mc_started_reg <= 1'b0;
         else if (mc_issue)
             mc_started_reg <= 1'b1;
@@ -563,7 +593,7 @@ module cpu_pipeline_top #(
     // Loads and stores both present their address from EX: the 1-cycle BRAM
     // read then lines up with MEM, and a store writes at the EX->MEM edge.
     // Port A therefore never has to choose between two pipeline stages.
-    // A store writes exactly once: only on the cycle it leaves EX (~ex_hold).
+    // A store writes exactly once: only on the cycle it leaves EX (ex_advance).
     // A store in EX is never speculative, because an older branch/jump resolves
     // in EX and squashes it while it is still in ID.
     // A store younger than a trap/MRET in MEM is killed (~ex_kill).
@@ -576,7 +606,7 @@ module cpu_pipeline_top #(
     // 0x8000_0000-0x8000_0FFF writes nothing (it faults in MEM: dbus_error).
     assign ex_eff_addr   = forwarded_a + id_ex_imm;
     assign ex_is_tcm     = (ex_eff_addr[31:TCM_AW+2] == TCM_BASE[31:TCM_AW+2]);
-    assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ~ex_hold & ~ex_kill}};
+    assign cpu_tcm_we    = ex_store_be & {4{id_ex_mem_write & ex_is_tcm & ~ex_misaligned & ex_advance & ~ex_kill}};
     assign cpu_tcm_addr  = ex_eff_addr[TCM_AW+1:2];
     assign cpu_tcm_wdata = ex_store_data;
 
@@ -662,7 +692,7 @@ module cpu_pipeline_top #(
     // edge when the CSR instruction leaves EX (~ex_hold), like a store.
     // Immediate forms use the rs1 field (id_ex_rs1_addr) as a 5-bit uimm.
     assign csr_wsrc   = id_ex_funct3[2] ? {27'b0, id_ex_rs1_addr} : forwarded_a;
-    assign csr_commit = is_csr_ex & csr_we_ex & ~ex_hold & ~ex_kill;
+    assign csr_commit = is_csr_ex & csr_we_ex & ex_advance & ~ex_kill;
 
     csr_file u_csr (
         .clk         (clk),
@@ -672,7 +702,7 @@ module cpu_pipeline_top #(
         .wsrc        (csr_wsrc),
         .we          (csr_commit),
         .rdata       (csr_rdata),
-        .instret_inc (mem_wb_valid),
+        .instret_inc (mem_wb_valid & ~mem_stall),
         .trap_take   (mem_trap),
         .trap_cause  (mem_trap_cause),
         .trap_pc     (ex_mem_pc),
@@ -693,8 +723,8 @@ module cpu_pipeline_top #(
     // EX commit points of the MAC that are not start pulses: MAC_CLEAR and the
     // sticky-overflow update of READ_LO/HI. Both commit once, when the
     // instruction leaves EX, and never when it is killed.
-    assign mac_rd64_strobe  = mac_to_reg_ex & ~mac_rd_op_ex[1] & ~ex_hold & ~ex_kill;
-    assign mac_clear_commit = is_mac_clear_ex & ~ex_hold & ~ex_kill;
+    assign mac_rd64_strobe  = mac_to_reg_ex & ~mac_rd_op_ex[1] & ex_advance & ~ex_kill;
+    assign mac_clear_commit = is_mac_clear_ex & ex_advance & ~ex_kill;
 
     always_comb begin
         case (mac_rd_op_ex)
@@ -780,6 +810,7 @@ module cpu_pipeline_top #(
         .clk             (clk),
         .reset           (reset),
         .flush           (ex_mem_flush_sig),
+        .en              (~mem_stall),
         .reg_write_in    (id_ex_reg_write & ~ex_exc), .reg_write_out (ex_mem_reg_write),
         .mem_to_reg_in   (id_ex_mem_to_reg), .mem_to_reg_out (ex_mem_mem_to_reg),
         .mem_read_in     (id_ex_mem_read  & ~ex_misaligned), .mem_read_out  (ex_mem_mem_read),
@@ -804,9 +835,10 @@ module cpu_pipeline_top #(
     // EX commit points (TCM store, MAC/mul_div start, MAC_CLEAR, READ_LO/HI
     // sticky flag, CSR write) of the younger instruction in EX, and
     // mem_redirect wins the PC mux.
-    // Load/store access fault: an unmapped data address (dbus_error, decoded
-    // below) traps here. ex_mem_exc and dbus_error never coincide: an
-    // instruction with an earlier exception has its memory controls cleared.
+    // Load/store access fault: a bus access answered with an error
+    // (dbus_error, below) traps here, in its response cycle. ex_mem_exc and
+    // dbus_error never coincide: an instruction with an earlier exception
+    // has its memory controls cleared.
     assign mem_trap            = ex_mem_exc | dbus_error;
     assign mem_trap_cause      = ex_mem_exc ? ex_mem_cause
                                : (ex_mem_mem_write ? 5'd7 : 5'd5);
@@ -836,19 +868,29 @@ module cpu_pipeline_top #(
     assign is_tohost        = is_periph_region & (ex_mem_alu_result[11:2] == 10'h3FF);
     assign is_periph_page0  = is_periph_region & (ex_mem_alu_result[11:4] == 8'h00);
     assign is_timer         = is_periph_region & (ex_mem_alu_result[11:4] == 8'h10);
-    assign is_periph_mapped = is_periph_page0 | is_timer | is_tohost;
 
-    assign mem_access = ex_mem_mem_read | ex_mem_mem_write;
-    assign dbus_error = mem_access & ~is_tcm_access & ~is_periph_mapped;
+    assign mem_access     = ex_mem_mem_read | ex_mem_mem_write;
+    assign mem_core_local = is_timer | is_tohost;
+    assign mem_is_bus     = mem_access & ~is_tcm_access & ~mem_core_local;
+    assign mem_stall      = mem_is_bus & ~bus_rsp_done;
+    assign dbus_error     = mem_is_bus & bus_rsp_done & bus_rsp_err;
+
+    // ---- Data bus (step 1: local responder for the peripheral page) ----
+    // The peripheral page answers in the access's first MEM cycle unless
+    // the test hook adds wait states; anything else on the bus is an error.
+    assign bus_wait_inj  = 1'b0;
+    assign bus_rsp_done  = mem_is_bus & ~bus_wait_inj;
+    assign bus_rsp_err   = ~is_periph_page0;
+    assign bus_rsp_rdata = gpio_rdata;
 
     // ---- Peripheral Sub-Decode (0xC000_000x page) ----
     assign is_i2c_access  = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b00);
     assign is_uart_access = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b01);
     assign is_seg_access  = is_periph_page0 & (ex_mem_alu_result[3:2] == 2'b10);
     assign timer_we       = ex_mem_mem_write & is_timer;
-    assign gpio_we        = ex_mem_mem_write &  is_i2c_access;
-    assign uart_we        = ex_mem_mem_write &  is_uart_access;
-    assign seg_we         = ex_mem_mem_write &  is_seg_access;
+    assign gpio_we        = ex_mem_mem_write &  is_i2c_access  & bus_rsp_done;
+    assign uart_we        = ex_mem_mem_write &  is_uart_access & bus_rsp_done;
+    assign seg_we         = ex_mem_mem_write &  is_seg_access  & bus_rsp_done;
 
     // TCM: dual-port memory behind its wrapper
     tcm_wrap #(
@@ -983,7 +1025,7 @@ module cpu_pipeline_top #(
         if (is_tcm_access)
             mem_read_data_muxed = tcm_douta;
         else if (is_periph_page0)
-            mem_read_data_muxed = gpio_rdata;
+            mem_read_data_muxed = bus_rsp_rdata;
         else if (is_timer)
             mem_read_data_muxed = timer_rdata;
         else
@@ -1020,6 +1062,7 @@ module cpu_pipeline_top #(
     mem_wb_reg u_mem_wb (
         .clk             (clk),
         .reset           (reset),
+        .en              (~mem_stall),
         .reg_write_in    (ex_mem_reg_write & ~mem_trap), .reg_write_out (mem_wb_reg_write),  // a faulting load writes no rd
         .result_in       (mem_result),         .result_out    (mem_wb_result),
         .rd_addr_in      (ex_mem_rd_addr),     .rd_addr_out    (mem_wb_rd_addr),
@@ -1031,6 +1074,9 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     assign wb_data = mem_wb_result;
+    // MEM/WB is frozen during mem_stall: its instruction writes once, in
+    // the last cycle (the value is on wb_data for forwarding meanwhile).
+    assign rf_we   = mem_wb_reg_write & ~mem_stall;
 
     // ========================================================================
     //  DEBUG OUTPUTS

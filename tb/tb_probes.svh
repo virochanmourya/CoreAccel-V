@@ -39,8 +39,14 @@
 // source), not a copy of an expression, so new hold sources need no change here.
 `define PRB_EX_HOLD_RTL  dut.ex_hold_src
 
-// Register write-back port (retirement proxy; no PC is carried to WB yet)
-`define PRB_WB_WE      dut.mem_wb_reg_write
+// Data bus: wait-state hook (+BUS_WAIT) and the access it acts on
+`define PRB_BUS_WAIT   dut.bus_wait_inj      // tied to 0 in the RTL; forced by the hook
+`define PRB_BUS_BUSY   dut.mem_is_bus        // a bus access is in MEM
+`define PRB_MEM_STALL  dut.mem_stall         // ... and MEM is waiting for it
+
+// Register write-back port (retirement proxy; no PC is carried to WB yet).
+// rf_we is gated by the global stall, so each write is seen once.
+`define PRB_WB_WE      dut.rf_we
 `define PRB_WB_RD      dut.mem_wb_rd_addr
 `define PRB_WB_DATA    dut.wb_data
 
