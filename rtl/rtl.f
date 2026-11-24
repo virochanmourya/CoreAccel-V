@@ -21,6 +21,8 @@ rtl/mem_wb_reg.sv
 rtl/uart_tx.sv
 rtl/seg_display.sv
 rtl/od_pad.sv
+rtl/sync_fifo.sv
+rtl/apb_uart.sv
 rtl/dbus_axi_master.sv
 rtl/axi4_demux.sv
 rtl/axi4_to_apb4.sv

@@ -9,7 +9,7 @@
 //                    -> built-in default slave (DECERR)
 //     -> slave 0: axi4_to_apb4, APB4 select per 4 KB slot:
 //          slot 0  0xC000_0000  legacy page (GPIO bit-bang I2C, UART TX, 7-seg)
-//          slot 1  0xC000_1000  UART0              (step 3; PSLVERR until then)
+//          slot 1  0xC000_1000  UART0 (TX/RX, FIFOs, irq)
 //          2..15                reserved: PSLVERR
 //          PLIC    0xC400_0000  (step 4; PSLVERR until then)
 //   The core-local words of slot 0 (mtimer 0x100-0x10F, tohost 0xFFC) are
@@ -22,7 +22,8 @@
 module periph_subsys #(
     parameter int CLK_FREQ  = 100_000_000,
     parameter int BAUD_RATE = 115_200,
-    parameter bit SEG_EN    = 1'b1
+    parameter bit SEG_EN    = 1'b1,
+    parameter int UART0_FIFO_DEPTH = 16
 )(
     input  logic        clk,
     input  logic        reset,
@@ -69,7 +70,12 @@ module periph_subsys #(
     output logic        uart_tx_out,
     output logic [6:0]  seg,
     output logic        dp,
-    output logic [3:0]  an
+    output logic [3:0]  an,
+    output logic        uart0_txd,
+    input  logic        uart0_rxd,       // asynchronous
+
+    // ---- Interrupt sources (PLIC) ----
+    output logic        uart0_irq
 );
 
     // ------------------------------------------------------------ AXI demux
@@ -167,9 +173,22 @@ module periph_subsys #(
         .uart_tx_out (uart_tx_out), .seg (seg), .dp (dp), .an (an)
     );
 
+    // Slot 1: UART0
+    apb_uart #(
+        .CLK_FREQ   (CLK_FREQ),
+        .BAUD_RATE  (BAUD_RATE),
+        .FIFO_DEPTH (UART0_FIFO_DEPTH)
+    ) u_uart0 (
+        .clk (clk), .reset (reset),
+        .psel (psel[P_UART0]), .penable (penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_UART0]), .pready (pready[P_UART0]),
+        .pslverr (pslverr[P_UART0]),
+        .txd (uart0_txd), .rxd (uart0_rxd), .irq (uart0_irq)
+    );
+
     // Unused selects: answer PSLVERR at once.
     generate
-        for (genvar i = 1; i < NP; i++) begin : g_empty
+        for (genvar i = 2; i < NP; i++) begin : g_empty
             assign prdata[i]  = '0;
             assign pready[i]  = 1'b1;
             assign pslverr[i] = 1'b1;
@@ -178,6 +197,6 @@ module periph_subsys #(
 
     // PSTRB/PPROT: the slaves are word registers (lane-replicated data).
     logic unused;
-    assign unused = ^{pstrb, pprot, psel[NP-1:1], P_UART0, P_PLIC};
+    assign unused = ^{pstrb, pprot, psel[NP-1:2], P_PLIC};
 
 endmodule

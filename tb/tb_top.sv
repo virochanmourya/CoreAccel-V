@@ -27,6 +27,9 @@
 //
 // Simulation control word at HALT_ADDR (the RTL ignores writes there):
 //   store 1 -> raise the external interrupt line, store 2 -> drop it,
+//   0x1xx -> send byte xx to UART0's RX pin (8N1 at UART0's current DIV),
+//   0x2xx -> the same with a low stop bit (framing error),
+//   0x300 / 0x301 -> UART0 external loopback (RX pin = TX pin) on / off,
 //   any other value -> halt and check (TEST_END stores 0).
 // Output ends with exactly one line:
 //   RESULT PASS|FAIL|TIMEOUT test=<name> cycles=<n> ...
@@ -52,6 +55,10 @@ module tb_top;
     logic       dp;
     logic [3:0] an;
     wire        i2c_scl, i2c_sda;
+    logic       uart0_tx, uart0_rx;
+    logic       uart0_rx_drv = 1'b1;     // harness driver of UART0's RX pin
+    bit         uart0_loop   = 1'b0;     // external loopback
+    assign uart0_rx = uart0_loop ? uart0_tx : uart0_rx_drv;
 
     pullup (i2c_scl);
     pullup (i2c_sda);
@@ -66,6 +73,8 @@ module tb_top;
         .i2c_scl     (i2c_scl),
         .i2c_sda     (i2c_sda),
         .uart_tx_out (uart_tx_out),
+        .uart0_tx_out (uart0_tx),
+        .uart0_rx_in  (uart0_rx),
         .seg         (seg),
         .dp          (dp),
         .an          (an)
@@ -236,6 +245,13 @@ module tb_top;
                 ext_irq_tb <= 1'b1;
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA == 32'd2) begin
                 ext_irq_tb <= 1'b0;
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR &&
+                         (`PRB_ST_DATA[31:8] == 24'h1 || `PRB_ST_DATA[31:8] == 24'h2)) begin
+                fork uart0_send(`PRB_ST_DATA[7:0], `PRB_ST_DATA[31:8] == 24'h1); join_none
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA == 32'h300) begin
+                uart0_loop = 1'b1;
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA == 32'h301) begin
+                uart0_loop = 1'b0;
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
                 halted = 1'b1;
                 fork check_and_finish(); join_none
@@ -245,6 +261,17 @@ module tb_top;
             end
         end
     end
+
+    // One 8N1 frame on UART0's RX pin at UART0's current bit time.
+    task automatic uart0_send(input logic [7:0] b, input bit good_stop);
+        int div = `PRB_UART0_DIV;
+        logic [9:0] frame = {good_stop, b, 1'b0};
+        for (int i = 0; i < 10; i++) begin
+            uart0_rx_drv <= frame[i];
+            repeat (div) @(posedge clk);
+        end
+        uart0_rx_drv <= 1'b1;
+    endtask
 
     function automatic logic [31:0] tcm_word(logic [31:0] addr);
         return `PRB_TCM_ARR[(addr - TCM_BASE) >> 2];

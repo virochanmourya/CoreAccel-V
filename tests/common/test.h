@@ -24,6 +24,13 @@
 // ignores writes there): raise / drop the external interrupt line.
 #define SIM_EXT_IRQ_ON  1
 #define SIM_EXT_IRQ_OFF 2
+// UART0 RX-pin stimulus (stored to HALT_ADDR): send a byte / a byte with a
+// bad stop bit; external loopback (RX pin = TX pin) on / off.
+#define SIM_UART0_SEND      0x100
+#define SIM_UART0_BADSTOP   0x200
+#define SIM_UART0_LOOP_ON   0x300
+#define SIM_UART0_LOOP_OFF  0x301
+#define UART0_BASE  0xC0001000
 // Signature slots; a test with more checks defines SIG_WORDS before the include.
 #ifndef SIG_WORDS
 #define SIG_WORDS   128

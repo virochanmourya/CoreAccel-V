@@ -26,8 +26,12 @@ module cpu_pipeline_top #(
     inout  wire        i2c_scl,
     inout  wire        i2c_sda,
 
-    // UART Telemetry Output (One-Way TX)
+    // UART Telemetry Output (One-Way TX, legacy page)
     output logic       uart_tx_out,
+
+    // UART0 (APB slot 1)
+    output logic       uart0_tx_out,
+    input  logic       uart0_rx_in,
 
     // 7-Segment Display (Hardware Multiplexed)
     output logic [6:0] seg,
@@ -143,6 +147,7 @@ module cpu_pipeline_top #(
 
     logic        scl_pad_in, sda_pad_in;     // raw pad levels (asynchronous)
     logic        scl_drive_low, sda_drive_low;
+    logic        uart0_irq;                  // UART0 interrupt (PLIC source 1, step 4)
     logic [3:0]  ex_mem_strb;                // store byte lanes in MEM (AXI WSTRB)
 
     // ---- AXI4 data-bus master port (MEM) ----
@@ -929,8 +934,15 @@ module cpu_pipeline_top #(
         .uart_tx_out   (uart_tx_out),
         .seg           (seg),
         .dp            (dp),
-        .an            (an)
+        .an            (an),
+        .uart0_txd     (uart0_tx_out),
+        .uart0_rxd     (uart0_rx_in),
+        .uart0_irq     (uart0_irq)
     );
+
+    // UART0's interrupt reaches the core through the PLIC (next step).
+    logic unused_uart0_irq;
+    assign unused_uart0_irq = uart0_irq;
 
     // ---- Open-drain I2C pads (driven by the legacy page's GPIO latch) ----
     od_pad u_scl_pad (.drive_low(scl_drive_low), .pad_in(scl_pad_in), .pad(i2c_scl));

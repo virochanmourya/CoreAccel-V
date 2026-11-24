@@ -140,6 +140,14 @@ set_property -dict { PACKAGE_PIN A18  IOSTANDARD LVCMOS33 } [get_ports uart_tx_o
 ## No timing relevance to internal pipeline closure.
 set_false_path -to [get_ports uart_tx_out]
 
+## UART0 (APB slot 1, TX + RX). PROVISIONAL pins, to be confirmed: Pmod JB
+## pin 1 (A14) = TX out, pin 2 (A16) = RX in (needs an external USB-UART
+## adapter; the onboard bridge's TX pin A18 stays with the legacy UART).
+set_property -dict { PACKAGE_PIN A14  IOSTANDARD LVCMOS33 } [get_ports uart0_tx_out]
+set_property -dict { PACKAGE_PIN A16  IOSTANDARD LVCMOS33 } [get_ports uart0_rx_in]
+set_false_path -to   [get_ports uart0_tx_out]
+set_false_path -from [get_ports uart0_rx_in]
+
 ## ============================================================================
 ## 9. 7-SEGMENT DISPLAY — Basys 3 Onboard 4-Digit Common-Anode
 ## ============================================================================

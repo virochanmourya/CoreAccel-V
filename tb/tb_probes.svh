@@ -45,6 +45,9 @@
 `define PRB_MEM_STALL  dut.mem_stall         // ... and MEM is waiting for it
 `define PRB_BUS_ADDR   dut.ex_mem_alu_result // its address
 
+// UART0 bit time (clocks per bit), for the harness's RX-pin driver
+`define PRB_UART0_DIV  dut.u_periph.u_uart0.div
+
 // Register write-back port (retirement proxy; no PC is carried to WB yet).
 // rf_we is gated by the global stall, so each write is seen once.
 `define PRB_WB_WE      dut.rf_we
