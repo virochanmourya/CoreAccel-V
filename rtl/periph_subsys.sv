@@ -15,7 +15,9 @@
 //                               with the legacy bit-bang latch, reset = bit-bang)
 //          slot 4  0xC000_4000  GPIO (GPIO_W pins, edge/level interrupts)
 //          slot 5  0xC000_5000  timers (2 x 32-bit), PWM, input capture
-//          6..15                reserved: PSLVERR
+//          slot 8  0xC000_8000  system control: IDs, straps, reset cause,
+//                               scratch, software reset, watchdog
+//          6, 7, 9..15          reserved: PSLVERR
 //          PLIC    0xC400_0000  standard layout, sources 1..16
 //                               (UART0 = 1, SPI = 2, I2C = 3, GPIO = 4,
 //                               timers = 5)
@@ -44,7 +46,8 @@ module periph_subsys #(
     parameter int PLIC_PRIO_W = 3
 )(
     input  logic        clk,
-    input  logic        reset,
+    input  logic        reset,         // rst_sys
+    input  logic        rst_por,       // pin reset (system control only)
     input  logic        wait_inj,
 
     // ---- AXI4 slave port (single master) ----
@@ -100,6 +103,13 @@ module periph_subsys #(
     input  logic [GPIO_W-1:0]  gpio_in,  // asynchronous
     output logic [TMR_NPWM-1:0] pwm_out,
     input  logic [TMR_NCAP-1:0] cap_in,  // asynchronous
+
+    // ---- System control: straps in, reset requests out ----
+    input  logic [1:0]  boot_strap,      // asynchronous
+    input  logic        clk_sel,
+    input  logic        pll_lock,
+    output logic        rst_req_wdt,
+    output logic        rst_req_sw,
 
     // ---- PLIC output (to the core's MEIP) ----
     output logic        plic_eip
@@ -171,6 +181,7 @@ module periph_subsys #(
     localparam int P_I2C    = 3;
     localparam int P_GPIO   = 4;
     localparam int P_TMR    = 5;
+    localparam int P_SYSCTL = 8;
     localparam int P_PLIC   = NSLOT;
 
     logic [31:0]         paddr, pwdata;
@@ -291,6 +302,16 @@ module periph_subsys #(
         .irq (tmr_irq)
     );
 
+    // Slot 8: system control and watchdog
+    apb_sysctl u_sysctl (
+        .clk (clk), .reset (reset), .rst_por (rst_por),
+        .psel (psel[P_SYSCTL]), .penable (s_penable), .pwrite (pwrite), .paddr (paddr),
+        .pwdata (pwdata), .prdata (prdata[P_SYSCTL]), .pready (pready_raw[P_SYSCTL]),
+        .pslverr (pslverr[P_SYSCTL]),
+        .boot_strap (boot_strap), .clk_sel (clk_sel), .pll_lock (pll_lock),
+        .req_wdt (rst_req_wdt), .req_sw (rst_req_sw)
+    );
+
     // PLIC (its own APB select)
     apb_plic #(
         .NSRC   (PLIC_NSRC),
@@ -306,9 +327,11 @@ module periph_subsys #(
     // Unused selects: answer PSLVERR at once.
     generate
         for (genvar i = 6; i < NSLOT; i++) begin : g_empty
-            assign prdata[i]  = '0;
-            assign pready_raw[i] = 1'b1;
-            assign pslverr[i] = 1'b1;
+            if (i != P_SYSCTL) begin : g_slot
+                assign prdata[i]  = '0;
+                assign pready_raw[i] = 1'b1;
+                assign pslverr[i] = 1'b1;
+            end
         end
     endgenerate
 

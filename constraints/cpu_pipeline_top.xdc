@@ -236,6 +236,10 @@ set_false_path -from [get_ports {cap_in[*]}]
 ## clock is a pass-through either way).
 set_property -dict { PACKAGE_PIN R2   IOSTANDARD LVCMOS33 } [get_ports clk_sel_strap]
 set_false_path -from [get_ports clk_sel_strap]
+## boot_mode_strap[1:0] = SW13, SW14 (system control BOOT[1:0]).
+set_property -dict { PACKAGE_PIN T1   IOSTANDARD LVCMOS33 } [get_ports {boot_mode_strap[0]}]
+set_property -dict { PACKAGE_PIN U1   IOSTANDARD LVCMOS33 } [get_ports {boot_mode_strap[1]}]
+set_false_path -from [get_ports {boot_mode_strap[*]}]
 
 ## ============================================================================
 ## END OF CONSTRAINTS

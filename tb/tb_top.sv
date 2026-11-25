@@ -12,6 +12,7 @@
 //   +TEST=<name>       label used in the RESULT line
 //   +TRACE=<file>      register write-back log (commit_monitor)
 //   +CLK_SEL=<0/1>     clock-select strap pin level during reset (default 0)
+//   +BOOT_MODE=<0..3>  boot-mode strap pins during reset (default 0)
 //   +DBUS_ERRORS=<n>   expected number of unmapped data accesses (default 0)
 //   +ILLEGAL_ERRORS=<n>    expected illegal-instruction traps (mcause 2, default 0)
 //   +MISALIGNED_ERRORS=<n> expected misaligned load/store traps (mcause 4/6, default 0)
@@ -37,6 +38,7 @@
 //   0x7nn -> timer capture input 1 = pwm_out[nn],
 //   0x8nn -> I2C bus hog for nn us: nn < 0x80 SDA stuck low (no START),
 //            nn >= 0x80 another master holds the bus (START, lines high),
+//   0x90m -> boot-mode strap pins = m (the latch must ignore it after reset),
 //   any other value -> halt and check (TEST_END stores 0).
 // Output ends with exactly one line:
 //   RESULT PASS|FAIL|TIMEOUT test=<name> cycles=<n> ...
@@ -57,6 +59,7 @@ module tb_top;
     logic       clk   = 1'b0;
     logic       reset = 1'b1;           // reset pin (the core runs on its synchronised rst_sys)
     logic       clk_sel_strap = 1'b0;   // clock select strap (+CLK_SEL=1: PLL)
+    logic [1:0] boot_mode_strap = 2'd0; // boot-mode strap (+BOOT_MODE=<n>)
     logic [7:0] debug_pc, debug_wb;
     logic       uart_tx_out;
     logic [6:0] seg;
@@ -98,6 +101,7 @@ module tb_top;
         .clk         (clk),
         .reset       (reset),
         .clk_sel_strap (clk_sel_strap),
+        .boot_mode_strap (boot_mode_strap),
         .debug_pc    (debug_pc),
         .debug_wb    (debug_wb),
         .i2c_scl     (i2c_scl),
@@ -161,6 +165,7 @@ module tb_top;
     initial begin
         if (!$value$plusargs("TEST=%s", test_name))      test_name = "unnamed";
         if ($value$plusargs("CLK_SEL=%d", clk_sel_strap)) ;
+        if ($value$plusargs("BOOT_MODE=%d", boot_mode_strap)) ;
         if (!$value$plusargs("IMEM=%s", imem_file)) begin
             $display("RESULT FAIL test=%s reason=no_IMEM_plusarg", test_name);
             $finish;
@@ -306,6 +311,8 @@ module tb_top;
                 u_i2c_target.hog_kind = `PRB_ST_DATA[7];
                 u_i2c_target.hog_ns   = 1000 * `PRB_ST_DATA[6:0];
                 u_i2c_target.hog_go   = 1'b1;
+            end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR && `PRB_ST_DATA[31:2] == 30'h240) begin
+                boot_mode_strap <= `PRB_ST_DATA[1:0];
             end else if (`PRB_ST_VALID && `PRB_ST_ADDR == HALT_ADDR) begin
                 halted = 1'b1;
                 fork check_and_finish(); join_none

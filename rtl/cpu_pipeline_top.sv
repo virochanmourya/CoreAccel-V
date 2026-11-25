@@ -23,6 +23,7 @@ module cpu_pipeline_top #(
     input  logic       clk,            // reference clock (to clk_gen)
     input  logic       reset,          // reset pin, active high, asynchronous
     input  logic       clk_sel_strap,  // clock select, sampled during reset: 0 bypass, 1 PLL
+    input  logic [1:0] boot_mode_strap,// boot mode, sampled during reset (system control BOOT)
     
     // Debug outputs
     output logic [7:0] debug_pc,
@@ -297,9 +298,6 @@ module cpu_pipeline_top #(
         .pll_lock  (pll_lock)
     );
 
-    assign rst_req_wdt = 1'b0;
-    assign rst_req_sw  = 1'b0;
-
     rst_gen u_rst_gen (
         .clk     (clk_core),
         .rst_pin (reset),
@@ -308,10 +306,6 @@ module cpu_pipeline_top #(
         .rst_por (rst_por),
         .rst_sys (rst_sys)
     );
-
-    // Strap / lock readback and rst_por go to system control (slot 8).
-    logic unused_clkrst;
-    assign unused_clkrst = ^{clk_sel_q, pll_lock, rst_por};
 
     // ========================================================================
     // Hazard & Control Wiring
@@ -976,6 +970,7 @@ module cpu_pipeline_top #(
     ) u_periph (
         .clk       (clk_core),
         .reset     (rst_sys),
+        .rst_por   (rst_por),
         .wait_inj  (bus_wait_inj),
         .s_awvalid (axi_awvalid), .s_awready (axi_awready), .s_awaddr (axi_awaddr),
         .s_awlen   (axi_awlen),   .s_awsize  (axi_awsize),  .s_awburst (axi_awburst),
@@ -1008,6 +1003,11 @@ module cpu_pipeline_top #(
         .gpio_in       (gpio_in),
         .pwm_out       (pwm_out),
         .cap_in        (cap_in),
+        .boot_strap    (boot_mode_strap),
+        .clk_sel       (clk_sel_q),
+        .pll_lock      (pll_lock),
+        .rst_req_wdt   (rst_req_wdt),
+        .rst_req_sw    (rst_req_sw),
         .plic_eip      (plic_eip)
     );
 

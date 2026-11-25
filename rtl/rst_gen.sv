@@ -54,11 +54,21 @@ module rst_gen #(
     end
 
     // ---- System reset synchroniser ----
-    (* ASYNC_REG = "TRUE" *) logic [1:0] sys_ff;
+    // Its D input is synchronous (rst_por, the stretcher), and it is still
+    // 1 when the pin releases, so these flops cannot go metastable: no
+    // ASYNC_REG. rst_sys fans out to every flop in the design, so the last
+    // stage may be replicated (same cycle, no extra latency).
+    logic sys_ff0;
+    (* max_fanout = 256 *) logic sys_ff1;
     always_ff @(posedge clk or posedge rst_pin) begin
-        if (rst_pin) sys_ff <= 2'b11;
-        else         sys_ff <= {sys_ff[0], rst_por | (stretch_cnt != '0)};
+        if (rst_pin) begin
+            sys_ff0 <= 1'b1;
+            sys_ff1 <= 1'b1;
+        end else begin
+            sys_ff0 <= rst_por | (stretch_cnt != '0);
+            sys_ff1 <= sys_ff0;
+        end
     end
-    assign rst_sys = sys_ff[1];
+    assign rst_sys = sys_ff1;
 
 endmodule

@@ -37,6 +37,7 @@
 #define I2C_BASE    0xC0003000
 #define GPIO_BASE   0xC0004000
 #define TIMER_BASE  0xC0005000
+#define SYSCTL_BASE 0xC0008000
 // Timer capture channel 1 input = pwm_out[n] (reset: n = 1)
 #define SIM_CAP1_SEL        0x700
 // I2C target model: stretch SCL n us after every ACK clock (0 = off);
@@ -47,6 +48,8 @@
 // holding the bus (START, then both lines high), then released (STOP).
 #define SIM_I2C_HOG_SDA     0x800
 #define SIM_I2C_HOG_BUS     0x880
+// Boot-mode strap pins = low 2 bits (sampled only during the pin reset).
+#define SIM_BOOT_STRAP      0x900
 #define PLIC_BASE   0xC4000000
 // Signature slots; a test with more checks defines SIG_WORDS before the include.
 #ifndef SIG_WORDS

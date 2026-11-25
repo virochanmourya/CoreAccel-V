@@ -32,6 +32,7 @@ rtl/apb_spi.sv
 rtl/apb_i2c.sv
 rtl/apb_gpio.sv
 rtl/apb_timer.sv
+rtl/apb_sysctl.sv
 rtl/dbus_axi_master.sv
 rtl/axi4_demux.sv
 rtl/axi4_to_apb4.sv
