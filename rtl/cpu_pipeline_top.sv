@@ -9,6 +9,7 @@ module cpu_pipeline_top #(
     parameter TCM_INIT   = "tcm.hex",   // $readmemh image for TCM (.rodata/.data)
     // Memories are reached only through imem_wrap / tcm_wrap.
     parameter string MEM_TECH   = "FPGA",  // "FPGA" (LUT-ROM / BRAM) or "ASIC" (macro slot)
+    parameter string CLK_TECH   = "FPGA",  // "FPGA" (clock pass-through) or "ASIC" (glitch-free mux)
     parameter int    IMEM_WORDS = 2048,    // 8 KB at 0x0000_0000 (power of two)
     parameter int    TCM_WORDS  = 1024,    // 4 KB at 0x8000_0000 (power of two)
     parameter int    CLK_FREQ   = 100_000_000,
@@ -19,8 +20,9 @@ module cpu_pipeline_top #(
     parameter int    TMR_NPWM   = 4,       // PWM outputs
     parameter int    TMR_NCAP   = 2        // input-capture pins
 )(
-    input  logic       clk,
-    input  logic       reset,
+    input  logic       clk,            // reference clock (to clk_gen)
+    input  logic       reset,          // reset pin, active high, asynchronous
+    input  logic       clk_sel_strap,  // clock select, sampled during reset: 0 bypass, 1 PLL
     
     // Debug outputs
     output logic [7:0] debug_pc,
@@ -63,6 +65,14 @@ module cpu_pipeline_top #(
     localparam int          IMEM_AW  = $clog2(IMEM_WORDS);  // IMEM word-address bits
     localparam int          TCM_AW   = $clog2(TCM_WORDS);   // TCM word-address bits
     localparam logic [31:0] TCM_BASE = 32'h8000_0000;
+
+    // ---- Clock and reset ----
+    logic        clk_core;        // core clock (clk_gen output)
+    logic        rst_por;         // pin reset, synchronised (survives internal resets)
+    logic        rst_sys;         // system reset, synchronised: every block uses it
+    logic        clk_sel_q;       // latched clock-select strap
+    logic        pll_lock;
+    logic        rst_req_wdt, rst_req_sw;   // internal reset requests (1-cycle pulses)
 
     // ---- IF Stage ----
     logic [31:0] pc_current, if_instruction;
@@ -276,6 +286,34 @@ module cpu_pipeline_top #(
     logic id_ex_stall, ex_mem_flush_sig;
 
     // ========================================================================
+    // Clock and reset generation
+    // ========================================================================
+    clk_gen #(.CLK_TECH (CLK_TECH)) u_clk_gen (
+        .clk_in    (clk),
+        .rst_pin   (reset),
+        .sel_strap (clk_sel_strap),
+        .clk_out   (clk_core),
+        .sel_q     (clk_sel_q),
+        .pll_lock  (pll_lock)
+    );
+
+    assign rst_req_wdt = 1'b0;
+    assign rst_req_sw  = 1'b0;
+
+    rst_gen u_rst_gen (
+        .clk     (clk_core),
+        .rst_pin (reset),
+        .req_wdt (rst_req_wdt),
+        .req_sw  (rst_req_sw),
+        .rst_por (rst_por),
+        .rst_sys (rst_sys)
+    );
+
+    // Strap / lock readback and rst_por go to system control (slot 8).
+    logic unused_clkrst;
+    assign unused_clkrst = ^{clk_sel_q, pll_lock, rst_por};
+
+    // ========================================================================
     // Hazard & Control Wiring
     // ========================================================================
 
@@ -318,8 +356,8 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     pc_pipe u_pc (
-        .clk       (clk),
-        .reset     (reset),
+        .clk       (clk_core),
+        .reset     (rst_sys),
         .pc_write  (pc_write),
         .pc_src    (pc_redirect | mem_redirect),
         .pc_branch (mem_redirect ? mem_redirect_target : redirect_target),
@@ -345,8 +383,8 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     if_id_reg u_if_id (
-        .clk             (clk),
-        .reset           (reset),
+        .clk             (clk_core),
+        .reset           (rst_sys),
         .flush           (if_id_flush),
         .stall           (if_id_stall),
         .pc_in           (pc_current),
@@ -410,8 +448,8 @@ module cpu_pipeline_top #(
     );
 
     register_file u_regfile (
-        .clk        (clk),
-        .reset      (reset),
+        .clk        (clk_core),
+        .reset      (rst_sys),
         .we         (rf_we),
         .rs1        (id_rs1),
         .rs2        (id_rs2),
@@ -468,8 +506,8 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     id_ex_reg u_id_ex (
-        .clk             (clk),
-        .reset           (reset),
+        .clk             (clk_core),
+        .reset           (rst_sys),
         .flush           (id_ex_flush),
         .stall           (id_ex_stall),
         // WB
@@ -525,8 +563,8 @@ module cpu_pipeline_top #(
     // ---- Forwarding Unit ----
     // Registered selects, computed in the previous cycle (see forwarding_unit).
     forwarding_unit u_forward (
-        .clk              (clk),
-        .reset            (reset),
+        .clk              (clk_core),
+        .reset            (rst_sys),
         .hold             (ex_hold),
         .freeze           (mem_stall),
         .id_rs1           (id_rs1),
@@ -601,8 +639,8 @@ module cpu_pipeline_top #(
 
     // Cleared when the op leaves EX (ex_advance), not when its unit is done:
     // a finished op frozen in EX by mem_stall must not be issued again.
-    always_ff @(posedge clk) begin
-        if (reset || !mc_op_ex || ex_advance)
+    always_ff @(posedge clk_core) begin
+        if (rst_sys || !mc_op_ex || ex_advance)
             mc_started_reg <= 1'b0;
         else if (mc_issue)
             mc_started_reg <= 1'b1;
@@ -675,8 +713,8 @@ module cpu_pipeline_top #(
     // No abort input: a branch/jump resolves in EX and a MAC-unit op holds EX
     // until it finishes, so a redirect can never coincide with an in-flight op.
     mac_unit dsp_core (
-        .clk             (clk),
-        .reset           (reset),
+        .clk             (clk_core),
+        .reset           (rst_sys),
         .mac_start       (mac_start_pulse),
         .start_is_shift  (is_mac_rdshift_ex),
         .shamt           (forwarded_a[5:0]),  // latched at start (READ_SHIFT)
@@ -695,8 +733,8 @@ module cpu_pipeline_top #(
     // cycle from the forwarding muxes; the result is a register in mul_div.
     // No kill input yet (nothing can interrupt an op held in EX today).
     mul_div u_mul_div (
-        .clk       (clk),
-        .reset     (reset),
+        .clk       (clk_core),
+        .reset     (rst_sys),
         .start     (muldiv_start),
         .op        (id_ex_funct3),
         .operand_a (forwarded_a),
@@ -714,8 +752,8 @@ module cpu_pipeline_top #(
     assign csr_commit = is_csr_ex & csr_we_ex & ex_advance & ~ex_kill;
 
     csr_file u_csr (
-        .clk         (clk),
-        .reset       (reset),
+        .clk         (clk_core),
+        .reset       (rst_sys),
         .addr        (id_ex_imm[11:0]),
         .op          (id_ex_funct3[1:0]),
         .wsrc        (csr_wsrc),
@@ -826,8 +864,8 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     ex_mem_reg u_ex_mem (
-        .clk             (clk),
-        .reset           (reset),
+        .clk             (clk_core),
+        .reset           (rst_sys),
         .flush           (ex_mem_flush_sig),
         .en              (~mem_stall),
         .reg_write_in    (id_ex_reg_write & ~ex_exc), .reg_write_out (ex_mem_reg_write),
@@ -900,8 +938,8 @@ module cpu_pipeline_top #(
     assign timer_we     = ex_mem_mem_write & is_timer;
 
     dbus_axi_master #(.TIMEOUT(BUS_TIMEOUT)) u_dbus (
-        .clk       (clk),
-        .reset     (reset),
+        .clk       (clk_core),
+        .reset     (rst_sys),
         .req       (mem_is_bus),
         .req_write (ex_mem_mem_write),
         .req_addr  (ex_mem_alu_result),
@@ -936,8 +974,8 @@ module cpu_pipeline_top #(
         .TMR_NPWM  (TMR_NPWM),
         .TMR_NCAP  (TMR_NCAP)
     ) u_periph (
-        .clk       (clk),
-        .reset     (reset),
+        .clk       (clk_core),
+        .reset     (rst_sys),
         .wait_inj  (bus_wait_inj),
         .s_awvalid (axi_awvalid), .s_awready (axi_awready), .s_awaddr (axi_awaddr),
         .s_awlen   (axi_awlen),   .s_awsize  (axi_awsize),  .s_awburst (axi_awburst),
@@ -988,7 +1026,7 @@ module cpu_pipeline_top #(
         .WORDS     (TCM_WORDS),
         .INIT_FILE (TCM_INIT)
     ) u_tcm (
-        .clk    (clk),
+        .clk    (clk_core),
         .wea    (tcm_wea),
         .addra  (tcm_addra),
         .dina   (tcm_dina),
@@ -1001,8 +1039,8 @@ module cpu_pipeline_top #(
     //  Machine timer (0xC000_0100..0x10F) and external interrupt line
     // ========================================================================
     mtimer u_mtimer (
-        .clk   (clk),
-        .reset (reset),
+        .clk   (clk_core),
+        .reset (rst_sys),
         .we    (timer_we),
         .sel   (ex_mem_alu_result[3:2]),
         .wdata (ex_mem_rs2_data),
@@ -1018,8 +1056,8 @@ module cpu_pipeline_top #(
     // tests (tied 0 in the design). Both are ORed before the synchroniser.
     assign sim_irq = 1'b0;
     assign ext_irq = plic_eip | sim_irq;
-    always_ff @(posedge clk) begin
-        if (reset) ext_irq_sync <= 2'b00;
+    always_ff @(posedge clk_core) begin
+        if (rst_sys) ext_irq_sync <= 2'b00;
         else       ext_irq_sync <= {ext_irq_sync[0], ext_irq};
     end
     assign meip = ext_irq_sync[1];
@@ -1064,8 +1102,8 @@ module cpu_pipeline_top #(
     // ========================================================================
 
     mem_wb_reg u_mem_wb (
-        .clk             (clk),
-        .reset           (reset),
+        .clk             (clk_core),
+        .reset           (rst_sys),
         .en              (~mem_stall),
         .reg_write_in    (ex_mem_reg_write & ~mem_trap), .reg_write_out (mem_wb_reg_write),  // a faulting load writes no rd
         .result_in       (mem_result),         .result_out    (mem_wb_result),

@@ -11,6 +11,7 @@
 //   +TIMEOUT=<cycles>  default 200000
 //   +TEST=<name>       label used in the RESULT line
 //   +TRACE=<file>      register write-back log (commit_monitor)
+//   +CLK_SEL=<0/1>     clock-select strap pin level during reset (default 0)
 //   +DBUS_ERRORS=<n>   expected number of unmapped data accesses (default 0)
 //   +ILLEGAL_ERRORS=<n>    expected illegal-instruction traps (mcause 2, default 0)
 //   +MISALIGNED_ERRORS=<n> expected misaligned load/store traps (mcause 4/6, default 0)
@@ -54,7 +55,8 @@ module tb_top;
 
     // ---------------------------------------------------------------- DUT
     logic       clk   = 1'b0;
-    logic       reset = 1'b1;
+    logic       reset = 1'b1;           // reset pin (the core runs on its synchronised rst_sys)
+    logic       clk_sel_strap = 1'b0;   // clock select strap (+CLK_SEL=1: PLL)
     logic [7:0] debug_pc, debug_wb;
     logic       uart_tx_out;
     logic [6:0] seg;
@@ -95,6 +97,7 @@ module tb_top;
     cpu_pipeline_top dut (
         .clk         (clk),
         .reset       (reset),
+        .clk_sel_strap (clk_sel_strap),
         .debug_pc    (debug_pc),
         .debug_wb    (debug_wb),
         .i2c_scl     (i2c_scl),
@@ -116,7 +119,7 @@ module tb_top;
 
     commit_monitor u_commit (
         .clk     (clk),
-        .reset   (reset),
+        .reset   (`PRB_RST),
         .wb_we   (`PRB_WB_WE),
         .wb_rd   (`PRB_WB_RD),
         .wb_data (`PRB_WB_DATA)
@@ -157,6 +160,7 @@ module tb_top;
 
     initial begin
         if (!$value$plusargs("TEST=%s", test_name))      test_name = "unnamed";
+        if ($value$plusargs("CLK_SEL=%d", clk_sel_strap)) ;
         if (!$value$plusargs("IMEM=%s", imem_file)) begin
             $display("RESULT FAIL test=%s reason=no_IMEM_plusarg", test_name);
             $finish;
@@ -197,7 +201,7 @@ module tb_top;
         if ($value$plusargs("HOLD_EX_STORES=%d", hold_cycles) && hold_cycles > 0) begin
             forever begin
                 @(posedge clk); #1;
-                if (!reset && !halted && `PRB_EX_TCM_STORE) begin
+                if (!`PRB_RST && !halted && `PRB_EX_TCM_STORE) begin
                     force `PRB_EX_HOLD = 1'b1;
                     repeat (hold_cycles) @(posedge clk);
                     #1 force `PRB_EX_HOLD = `PRB_EX_HOLD_RTL;   // back to the RTL driver
@@ -233,7 +237,7 @@ module tb_top;
         if (bus_hook) begin
             forever begin
                 @(posedge clk); #1;
-                if (!reset && !halted && `PRB_BUS_BUSY) begin
+                if (!`PRB_RST && !halted && `PRB_BUS_BUSY) begin
                     if (hang_en && !prev_stall && `PRB_BUS_ADDR == hang_addr) begin
                         force `PRB_BUS_WAIT = 1'b1;
                         repeat (hang_cycles) @(posedge clk);
@@ -262,7 +266,7 @@ module tb_top;
 
     // ---------------------------------------------------------------- halt / timeout
     always @(posedge clk) begin
-        if (!reset && !halted) begin
+        if (!`PRB_RST && !halted) begin
             cycles <= cycles + 1;
             if (`PRB_DBUS_ERR === 1'b1) begin
                 dbus_errors++;

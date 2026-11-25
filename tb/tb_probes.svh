@@ -6,6 +6,11 @@
 `ifndef TB_PROBES_SVH
 `define TB_PROBES_SVH
 
+// System reset (synchronised, rst_gen): the core and its peripherals run from it.
+// Cycles, hooks, monitors and SVAs key off this, not the reset pin, so a
+// watchdog / software reset mid-test disables them like a pin reset.
+`define PRB_RST        dut.rst_sys
+
 // Backing arrays loaded by the harness
 `define PRB_IMEM_ARR   dut.u_imem.g_fpga.u_rom.mem
 `define PRB_TCM_ARR    dut.u_tcm.g_fpga.u_ram.mem

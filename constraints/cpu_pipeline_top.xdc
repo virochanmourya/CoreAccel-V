@@ -37,8 +37,10 @@ create_clock -name sys_clk -period 10.000 -waveform {0.000 5.000} [get_ports clk
 ## ============================================================================
 ## 2. RESET — Center Push Button (BTNC)
 ## ============================================================================
-## Active-high synchronous reset. The Basys 3 center button is active-high
-## (logic 1 when pressed, logic 0 when released).
+## Active-high reset pin. The Basys 3 center button is active-high
+## (logic 1 when pressed, logic 0 when released). It feeds only the
+## asynchronous inputs of the reset synchronisers (rst_gen, clk_gen); the
+## design runs on the synchronised rst_sys / rst_por.
 
 set_property -dict { PACKAGE_PIN U18 IOSTANDARD LVCMOS33 } [get_ports reset]
 
@@ -228,6 +230,12 @@ set_property -dict { PACKAGE_PIN H2   IOSTANDARD LVCMOS33 } [get_ports {cap_in[0
 set_property -dict { PACKAGE_PIN G3   IOSTANDARD LVCMOS33 } [get_ports {cap_in[1]}]
 set_false_path -to   [get_ports {pwm_out[*]}]
 set_false_path -from [get_ports {cap_in[*]}]
+
+## Strap pins (PROVISIONAL): slide switches, sampled (2-FF) only while the
+## reset pin is held. clk_sel_strap = SW15 (0 bypass, 1 PLL slot; the FPGA
+## clock is a pass-through either way).
+set_property -dict { PACKAGE_PIN R2   IOSTANDARD LVCMOS33 } [get_ports clk_sel_strap]
+set_false_path -from [get_ports clk_sel_strap]
 
 ## ============================================================================
 ## END OF CONSTRAINTS

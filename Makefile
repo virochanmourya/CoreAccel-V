@@ -3,6 +3,7 @@
 #
 #   make regress            build + run every test (tests/*.S + generated), print summary
 #   make test T=<name>      build + run one test (tests/<name>.S, or generated)
+#   make test T=clk_rst     ... or a unit test (tb/unit/tb_<name>.sv, own snapshot)
 #   MEXT_SEED=<n> make ...  seed for the generated mext_random test
 #   HOLD=<n> make regress   ... with every TCM store held in EX for n cycles
 #   WAIT=<n>|rand make ...  ... with bus wait states on every data-bus access
@@ -47,7 +48,10 @@ TEST_DIR    := $(ROOT)/tests
 TEST_COMMON := $(TEST_DIR)/common/test.h $(TEST_DIR)/common/link.ld
 # Generated tests (built from build/gen/<name>.S, see "generated tests" below)
 GEN_TESTS   := mext_random
-TESTS       := $(sort $(basename $(notdir $(wildcard $(TEST_DIR)/*.S)))) $(GEN_TESTS)
+# Unit tests: tb/unit/tb_<name>.sv, a standalone xsim snapshot each (no CPU
+# program; HOLD/WAIT do not apply). Listed in TESTS so regress counts them.
+UNIT_TESTS  := clk_rst
+TESTS       := $(sort $(basename $(notdir $(wildcard $(TEST_DIR)/*.S)))) $(GEN_TESTS) $(UNIT_TESTS)
 TEST_CFLAGS := $(ARCH) -nostdlib -nostartfiles -static \
                -I$(TEST_DIR)/common -T $(TEST_DIR)/common/link.ld
 
@@ -88,6 +92,22 @@ $(BUILD)/tests/mext_random/test.elf: $(GEN_DIR)/mext_random.S $(TEST_COMMON)
 .PHONY: FORCE
 FORCE:
 
+# ---------------------------------------------------------------- unit tests
+UNIT_DIR  := $(BUILD)/sim_unit
+UNIT_RTL_clk_rst := $(ROOT)/rtl/clk_mux_gf.sv $(ROOT)/rtl/clk_gen.sv $(ROOT)/rtl/rst_gen.sv
+
+$(UNIT_DIR)/%.stamp: $(ROOT)/tb/unit/tb_%.sv $(RTL_SRC)
+	@mkdir -p $(UNIT_DIR)/$*
+	@source $(VIVADO_SETTINGS) >/dev/null 2>&1; cd $(UNIT_DIR)/$* && \
+	    xvlog -sv $(UNIT_RTL_$*) $< > xvlog.log 2>&1 && \
+	    xelab tb_$* -s tb_$* -timescale 1ns/1ps -debug off > xelab.log 2>&1 \
+	    || { grep -E 'ERROR|WARNING' xvlog.log xelab.log; exit 1; }
+	@touch $@
+
+$(foreach u,$(UNIT_TESTS),$(BUILD)/tests/$(u)/plusargs.txt): $(BUILD)/tests/%/plusargs.txt:
+	@mkdir -p $(@D)
+	@echo "UNIT=$*" > $@
+
 # ---------------------------------------------------------------- xsim
 SIM_DIR   := $(BUILD)/sim$(if $(filter 1,$(BUS_VIP)),_vip)
 SIM_STAMP := $(SIM_DIR)/.elab.stamp
@@ -127,8 +147,16 @@ define run_xsim
 endef
 
 .PHONY: test
+ifneq ($(filter $(T),$(UNIT_TESTS)),)
+test: $(BUILD)/tests/$(T)/plusargs.txt $(UNIT_DIR)/$(T).stamp
+	@source $(VIVADO_SETTINGS) >/dev/null 2>&1; cd $(UNIT_DIR)/$(T) && \
+	    xsim tb_$(T) -R -log $(BUILD)/tests/$(T)/xsim.log > /dev/null 2>&1; \
+	grep -hE '^(RESULT|MISMATCH)' $(BUILD)/tests/$(T)/xsim.log \
+	    || echo "RESULT FAIL test=$(T) reason=no_result_line(see $(BUILD)/tests/$(T)/xsim.log)"
+else
 test: $(BUILD)/tests/$(T)/plusargs.txt $(SIM_STAMP)
 	$(call run_xsim,$(T))
+endif
 
 .PHONY: regress
 regress: tests $(SIM_STAMP)
@@ -159,6 +187,9 @@ $(FW_OUT)/plusargs.txt: $(FW_OUT)/firmware.elf $(ELF2HEX)
 lint:
 	docker run --rm -u $$(id -u):$$(id -g) -v $(ROOT):/w:ro -w /w $(LIBRELANE_IMAGE) \
 	    verilator --lint-only -Wall --top-module cpu_pipeline_top $(shell cat $(RTL_F))
+	@# the glitch-free mux branch of clk_gen is not elaborated in the FPGA build
+	docker run --rm -u $$(id -u):$$(id -g) -v $(ROOT):/w:ro -w /w $(LIBRELANE_IMAGE) \
+	    verilator --lint-only -Wall --top-module clk_gen -GCLK_TECH='"ASIC"' rtl/clk_mux_gf.sv rtl/clk_gen.sv
 
 # ---------------------------------------------------------------- misc
 .PHONY: clean

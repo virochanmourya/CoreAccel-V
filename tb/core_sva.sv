@@ -228,8 +228,8 @@ module core_sva #(
 endmodule
 
 bind cpu_pipeline_top core_sva #(.TCM_AW(TCM_AW)) u_core_sva (
-    .clk               (clk),
-    .reset             (reset),
+    .clk               (clk_core),
+    .reset             (rst_sys),
     .tcm_wea           (tcm_wea),
     .tcm_addra         (tcm_addra),
     .tcm_dina          (tcm_dina),

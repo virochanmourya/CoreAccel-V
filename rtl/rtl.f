@@ -1,4 +1,7 @@
 rtl/csr_pkg.sv
+rtl/clk_mux_gf.sv
+rtl/clk_gen.sv
+rtl/rst_gen.sv
 rtl/alu.sv
 rtl/mac_unit.sv
 rtl/mul_div.sv
