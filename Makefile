@@ -19,6 +19,12 @@
 #                           over UART0 from frames made by scripts/load.py
 #   BUS_VIP=1 make ...      add the Xilinx AXI protocol checker on the core's
 #                           AXI port (precompiled xsim library; separate snapshot)
+#   make bit                Vivado: default build (program in IMEM LUT-ROM) ->
+#                           build/bit/default/cpu_pipeline_top.bit + reports
+#   make bit-rom            Vivado: BOOT=rom build (boot ROM, writable IMEM,
+#                           UART loader at BAUD_RATE) -> build/bit/rom/
+#                           BIT_IMEM=<hex> [BIT_TCM=<hex>] picks the IMEM/TCM
+#                           image (default: make fw, the legacy demo firmware)
 #   make clean
 # ============================================================================
 SHELL := /bin/bash
@@ -68,6 +74,9 @@ ELF2HEX := $(ROOT)/scripts/elf2hex.py
 # The same values go to lint and Vivado; the ROM xsim snapshot sets them
 # through tb_top's BOOT_ROM parameter.
 BOOT_ROM_GENERICS := RESET_VECTOR=65536 IMEM_WRITABLE=1
+# UART0 reset baud rate of the BOOT=rom bitstream (the loader runs at it; the
+# xsim snapshot uses 3.125 Mbaud to keep the boot tests short)
+BOOT_BAUD         ?= 115200
 
 # ---------------------------------------------------------------- tests
 .PHONY: tests
@@ -238,6 +247,28 @@ lint:
 	@# the glitch-free mux branch of clk_gen is not elaborated in the FPGA build
 	docker run --rm -u $$(id -u):$$(id -g) -v $(ROOT):/w:ro -w /w $(LIBRELANE_IMAGE) \
 	    verilator --lint-only -Wall --top-module clk_gen -GCLK_TECH='"ASIC"' rtl/clk_mux_gf.sv rtl/clk_gen.sv
+
+# ---------------------------------------------------------------- bitstreams
+# One Vivado run each (vivado_impl.tcl: synth, opt, place, phys_opt, route,
+# reports stamped with the commit, write_bitstream). The default build gets
+# no generics, so its netlist is the one the timing runs measure.
+BIT_DIR  := $(BUILD)/bit
+BIT_IMEM ?= $(FW_OUT)/imem.hex
+BIT_TCM  ?= $(FW_OUT)/tcm.hex
+VIVADO_IMPL = @source $(VIVADO_SETTINGS) >/dev/null 2>&1; mkdir -p $(1) && cd $(1) && \
+    vivado -mode batch -nojournal -log vivado.log -source $(ROOT)/scripts/vivado_impl.tcl \
+    -tclargs $(ROOT) $(1) $(BIT_IMEM) $(wildcard $(BIT_TCM)) $(2) -bitstream > /dev/null \
+    || { tail -20 $(1)/vivado.log; exit 1; }; \
+    echo "design timing summary (WNS TNS ... WHS ...):"; \
+    grep -m1 -A6 'Design Timing Summary' $(1)/timing_summary.rpt | tail -1; \
+    echo "bitstream: $(1)/cpu_pipeline_top.bit"
+
+.PHONY: bit bit-rom
+bit: $(if $(filter $(FW_OUT)/%,$(BIT_IMEM)),fw)
+	$(call VIVADO_IMPL,$(BIT_DIR)/default,)
+
+bit-rom: $(BOOTROM) $(if $(filter $(FW_OUT)/%,$(BIT_IMEM)),fw)
+	$(call VIVADO_IMPL,$(BIT_DIR)/rom,-bootrom $(BOOTROM) $(addprefix -generic ,$(BOOT_ROM_GENERICS) BAUD_RATE=$(BOOT_BAUD)))
 
 # ---------------------------------------------------------------- misc
 .PHONY: clean
