@@ -36,7 +36,12 @@
 //                      4: the first data frame's CRC is bad on every try (3
 //                      NAKs, then ERR 0xE2), then the whole load again;
 //                      5: a frame header outside IMEM/TCM (ERR 0xE3), then
-//                      the whole load again
+//                      the whole load again; 6: three headers refused for
+//                      their length (len > 4096, past the end of IMEM, past
+//                      the end of TCM: 3 ERR 0xE3), then the whole load;
+//                      7: a misaligned address, then a misaligned length
+//                      (2 ERR 0xE3), then the whole load; 8: the jump
+//                      frame's entry address corrupted once (exactly 1 NAK)
 //                      Every case requires UART0 RX overrun to stay 0.
 //   +BUS_HANG_ADDR=<hex> every bus access to this address is held for
 //                     BUS_HANG_CYCLES (default 400) cycles: longer than the
@@ -420,6 +425,7 @@ module tb_top #(
     initial if (BOOT_ROM && boot_case != 3) begin
         string frames_file, line;
         string lines [$];
+        string bad_hdrs [$];            // headers (addr, len) answered ERR 0xE3
         int fd, tries, flip;
         bit flipped = 1'b0;
         logic [7:0] r;
@@ -434,6 +440,17 @@ module tb_top #(
             if (line.len() > 0) lines.push_back(line);
         end
         $fclose(fd);
+        case (boot_case)
+            // below TCM (and above IMEM): addr 0x4000_0000, len 4
+            5: bad_hdrs = '{"0000004004000000"};
+            // len 0x1004 > 4096 at IMEM 0 (fits IMEM: only the length limit
+            // refuses it); IMEM end 0x1F00 + 0x200 > 0x2000; TCM end
+            // 0x8000_0F00 + 0x200 > 0x8000_1000
+            6: bad_hdrs = '{"0000000004100000", "001F000000020000", "000F008000020000"};
+            // misaligned addr 0x8000_0002 (len 4); misaligned len 6 (addr 0x8000_0000)
+            7: bad_hdrs = '{"0200008004000000", "0000008006000000"};
+            default: ;
+        endcase
         wait (`PRB_RST === 1'b0);
         @(posedge clk);
         // Pass 0 carries the case's fault; an expected ERR ends it, and the
@@ -449,11 +466,24 @@ module tb_top #(
             boot_send_line(lines[0], -1);             // magic
             boot_reply(r);
             if (r == 8'h06) boot_acks++; else boot_bad++;
-            if (boot_case == 5 && pass == 0 && boot_bad == 0) begin
-                // header of a frame outside IMEM and TCM: addr 0x4000_0000, len 4
-                boot_send_line("0000004004000000", -1);
-                boot_reply(r);
-                if (r == 8'hE3) boot_errs++; else boot_bad++;
+            if (bad_hdrs.size() > 0 && pass == 0 && boot_bad == 0) begin
+                // frame headers the loader must refuse with ERR 0xE3; after
+                // each one the harness resyncs (the magic again), like a host
+                foreach (bad_hdrs[h]) begin
+                    if (h > 0) begin
+                        repeat (30 * `PRB_UART0_DIV) @(posedge clk);
+                        boot_send_line(lines[0], -1);
+                        boot_reply(r);
+                        if (r == 8'h06) boot_acks++; else boot_bad++;
+                    end
+                    boot_send_line(bad_hdrs[h], -1);
+                    boot_reply(r);
+                    if (r == 8'hE3) boot_errs++;
+                    else begin
+                        boot_bad++;
+                        $display("TB: bad header %s answered 0x%02h", bad_hdrs[h], r);
+                    end
+                end
                 continue;
             end
             boot_done = 1'b1;
@@ -462,8 +492,10 @@ module tb_top #(
                 do begin
                     // case 1: corrupt the first data frame's last CRC byte once;
                     // case 4: on every try (the 4th bad CRC is answered ERR 0xE2)
+                    // case 8: corrupt the jump frame's entry address (byte 0) once
                     flip = ((boot_case == 1 && !flipped) || (boot_case == 4 && pass == 0)) && k == 1
-                           ? lines[k].len() / 2 - 1 : -1;
+                           ? lines[k].len() / 2 - 1
+                         : boot_case == 8 && !flipped && k == lines.size() - 1 ? 0 : -1;
                     if (flip >= 0) flipped = 1'b1;
                     boot_send_line(lines[k], flip);
                     boot_reply(r);
@@ -491,8 +523,9 @@ module tb_top #(
         if (!BOOT_ROM) return 1'b1;
         if (`PRB_UART0_OVR !== 1'b0) return 1'b0;
         if (boot_case == 3) return boot_acks == 0 && boot_bad == 0;
-        exp_naks = boot_case == 1 ? 1 : boot_case == 4 ? 3 : 0;
-        exp_errs = (boot_case == 2 || boot_case == 4 || boot_case == 5) ? 1 : 0;
+        exp_naks = (boot_case == 1 || boot_case == 8) ? 1 : boot_case == 4 ? 3 : 0;
+        exp_errs = (boot_case == 2 || boot_case == 4 || boot_case == 5) ? 1
+                 : boot_case == 6 ? 3 : boot_case == 7 ? 2 : 0;
         return boot_done && boot_naks == exp_naks && boot_errs == exp_errs && boot_bad == 0;
     endfunction
 
