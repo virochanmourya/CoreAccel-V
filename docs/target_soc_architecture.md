@@ -399,13 +399,13 @@ graph TB
 
 ### Cache Line Format (157 bits)
 
-```
-┌───────┬───────┬────────────┬──────────┬───────────────────────────────────────────┐
-│ Valid │ Dirty │ MESI State │   Tag    │                  Data                     │
-│ 1 bit │ 1 bit │   2 bits   │ 25 bits  │               128 bits                    │
-│       │       │ M/E/S/I    │ [31:7]   │  Word3  │  Word2  │  Word1  │  Word0      │
-└───────┴───────┴────────────┴──────────┴───────────────────────────────────────────┘
-```
+| Field | Width | Contents |
+|---|---|---|
+| Valid | 1 bit | |
+| Dirty | 1 bit | |
+| MESI State | 2 bits | M/E/S/I |
+| Tag | 25 bits | [31:7] |
+| Data | 128 bits | Word3, Word2, Word1, Word0 |
 
 ### Cache Geometry
 
@@ -1209,77 +1209,68 @@ graph TB
 
 ### RTL Source Tree (Target State)
 
-```
-CoreAccel_V/
-├── soc_top.sv                          # Top-level SoC integration
-│
-├── rtl/core/                           # Per-hart processor core
-│   ├── core_top.sv                     # Single-hart top wrapper
-│   ├── alu.sv                          # SIMD-capable segmented ALU
-│   ├── mac_unit.sv                     # 72-bit MAC with abort
-│   ├── control_unit_pipe.sv            # Pipeline control decoder
-│   ├── csr_file.sv                     # Machine-mode CSR file
-│   ├── hazard_detection_unit.sv        # Load-use + control hazards
-│   ├── forwarding_unit.sv              # 3-stage data forwarding
-│   ├── register_file.sv               # 32x32 dual-read GPR file
-│   ├── imm_gen_pipe.sv                 # Immediate generator
-│   ├── pc_pipe.sv                      # Program counter logic
-│   ├── if1_if2_reg.sv                  # IF1→IF2 pipeline register
-│   ├── if_id_reg.sv                    # IF2→ID pipeline register
-│   ├── id_ex_reg.sv                    # ID→EX pipeline register
-│   ├── ex_mem_reg.sv                   # EX→MEM pipeline register
-│   └── mem_wb_reg.sv                   # MEM→WB pipeline register
-│
-├── rtl/cache/                          # L1 data cache + coherency
-│   ├── mesi_pkg.sv                     # MESI type definitions
-│   ├── l1_dcache.sv                    # L1 cache top-level
-│   ├── cache_controller.sv             # Cache FSM controller
-│   ├── tag_array.sv                    # Tag storage array
-│   ├── data_array.sv                   # Data storage array
-│   ├── snoop_controller.sv             # Per-core snoop handler
-│   ├── coherency_bus.sv                # Shared snoop bus logic
-│   └── cache_axi_master.sv             # Cache↔bus AXI master
-│
-├── rtl/mem/                            # Memory subsystem
-│   ├── mem_wrapper.sv                  # Unified memory interface
-│   ├── instruction_memory.sv           # IMEM (per-core, 8KB)
-│   ├── data_memory.sv                  # DMEM (shared, 4KB)
-│   ├── tcm_ram.sv                      # TCM BRAM (TDP, 4KB)
-│   ├── tcm_port_b_arbiter.sv          # Port-B arb: MAC vs FFT
-│   └── tcm_arbiter.sv                  # Port-A arb: cores vs DMA
-│
-├── rtl/bus/                            # AXI4-Lite bus fabric
-│   ├── axi_lite_if.sv                  # AXI4-Lite interface def
-│   ├── axi_lite_xbar.sv               # Crossbar switch
-│   ├── axi_lite_arbiter.sv             # N-master round-robin
-│   ├── addr_decoder.sv                 # Address region decoder
-│   ├── axi_lite_to_sram.sv             # AXI→SRAM bridge
-│   ├── axi_lite_to_mmio.sv             # AXI→MMIO bridge
-│   └── cpu_bus_master.sv               # CPU→AXI master adapter
-│
-├── rtl/dma/                            # DMA subsystem
-│   ├── dma_controller.sv               # DMA top-level
-│   ├── dma_fsm.sv                      # DMA state machine
-│   └── dma_axi_master.sv               # DMA AXI master port
-│
-├── rtl/fft/                            # FFT accelerator
-│   ├── fft_top.sv                      # FFT top-level
-│   ├── fft_controller.sv               # FFT sequencing FSM
-│   ├── fft_butterfly.sv                # Radix-2 butterfly
-│   ├── twiddle_rom.sv                  # Twiddle factor ROM
-│   └── fft_buffer.sv                   # Ping-pong buffer
-│
-├── rtl/periph/                         # Peripheral controllers
-│   ├── uart_tx.sv                      # UART transmitter
-│   ├── seg_display.sv                  # 7-segment display driver
-│   ├── irq_controller.sv              # Interrupt controller
-│   └── clint.sv                        # CLINT timer + IPI
-│
-├── sim/                                # Testbenches
-├── firmware_v2/                        # Software / firmware
-├── constraints/                        # FPGA constraints (XDC)
-└── docs/                               # Documentation
-```
+| Directory | File | Description |
+|---|---|---|
+| `CoreAccel_V/` | `soc_top.sv` | Top-level SoC integration |
+| `rtl/core/` | | Per-hart processor core |
+| `rtl/core/` | `core_top.sv` | Single-hart top wrapper |
+| `rtl/core/` | `alu.sv` | SIMD-capable segmented ALU |
+| `rtl/core/` | `mac_unit.sv` | 72-bit MAC with abort |
+| `rtl/core/` | `control_unit_pipe.sv` | Pipeline control decoder |
+| `rtl/core/` | `csr_file.sv` | Machine-mode CSR file |
+| `rtl/core/` | `hazard_detection_unit.sv` | Load-use + control hazards |
+| `rtl/core/` | `forwarding_unit.sv` | 3-stage data forwarding |
+| `rtl/core/` | `register_file.sv` | 32x32 dual-read GPR file |
+| `rtl/core/` | `imm_gen_pipe.sv` | Immediate generator |
+| `rtl/core/` | `pc_pipe.sv` | Program counter logic |
+| `rtl/core/` | `if1_if2_reg.sv` | IF1→IF2 pipeline register |
+| `rtl/core/` | `if_id_reg.sv` | IF2→ID pipeline register |
+| `rtl/core/` | `id_ex_reg.sv` | ID→EX pipeline register |
+| `rtl/core/` | `ex_mem_reg.sv` | EX→MEM pipeline register |
+| `rtl/core/` | `mem_wb_reg.sv` | MEM→WB pipeline register |
+| `rtl/cache/` | | L1 data cache + coherency |
+| `rtl/cache/` | `mesi_pkg.sv` | MESI type definitions |
+| `rtl/cache/` | `l1_dcache.sv` | L1 cache top-level |
+| `rtl/cache/` | `cache_controller.sv` | Cache FSM controller |
+| `rtl/cache/` | `tag_array.sv` | Tag storage array |
+| `rtl/cache/` | `data_array.sv` | Data storage array |
+| `rtl/cache/` | `snoop_controller.sv` | Per-core snoop handler |
+| `rtl/cache/` | `coherency_bus.sv` | Shared snoop bus logic |
+| `rtl/cache/` | `cache_axi_master.sv` | Cache↔bus AXI master |
+| `rtl/mem/` | | Memory subsystem |
+| `rtl/mem/` | `mem_wrapper.sv` | Unified memory interface |
+| `rtl/mem/` | `instruction_memory.sv` | IMEM (per-core, 8KB) |
+| `rtl/mem/` | `data_memory.sv` | DMEM (shared, 4KB) |
+| `rtl/mem/` | `tcm_ram.sv` | TCM BRAM (TDP, 4KB) |
+| `rtl/mem/` | `tcm_port_b_arbiter.sv` | Port-B arb: MAC vs FFT |
+| `rtl/mem/` | `tcm_arbiter.sv` | Port-A arb: cores vs DMA |
+| `rtl/bus/` | | AXI4-Lite bus fabric |
+| `rtl/bus/` | `axi_lite_if.sv` | AXI4-Lite interface def |
+| `rtl/bus/` | `axi_lite_xbar.sv` | Crossbar switch |
+| `rtl/bus/` | `axi_lite_arbiter.sv` | N-master round-robin |
+| `rtl/bus/` | `addr_decoder.sv` | Address region decoder |
+| `rtl/bus/` | `axi_lite_to_sram.sv` | AXI→SRAM bridge |
+| `rtl/bus/` | `axi_lite_to_mmio.sv` | AXI→MMIO bridge |
+| `rtl/bus/` | `cpu_bus_master.sv` | CPU→AXI master adapter |
+| `rtl/dma/` | | DMA subsystem |
+| `rtl/dma/` | `dma_controller.sv` | DMA top-level |
+| `rtl/dma/` | `dma_fsm.sv` | DMA state machine |
+| `rtl/dma/` | `dma_axi_master.sv` | DMA AXI master port |
+| `rtl/fft/` | | FFT accelerator |
+| `rtl/fft/` | `fft_top.sv` | FFT top-level |
+| `rtl/fft/` | `fft_controller.sv` | FFT sequencing FSM |
+| `rtl/fft/` | `fft_butterfly.sv` | Radix-2 butterfly |
+| `rtl/fft/` | `twiddle_rom.sv` | Twiddle factor ROM |
+| `rtl/fft/` | `fft_buffer.sv` | Ping-pong buffer |
+| `rtl/periph/` | | Peripheral controllers |
+| `rtl/periph/` | `uart_tx.sv` | UART transmitter |
+| `rtl/periph/` | `seg_display.sv` | 7-segment display driver |
+| `rtl/periph/` | `irq_controller.sv` | Interrupt controller |
+| `rtl/periph/` | `clint.sv` | CLINT timer + IPI |
+| `sim/` | | Testbenches |
+| `firmware_v2/` | | Software / firmware |
+| `constraints/` | | FPGA constraints (XDC) |
+| `docs/` | | Documentation |
 
 ### Module Dependency Graph
 

@@ -21,24 +21,46 @@ features (none implemented), see
 - FPGA target: Digilent Basys 3 (Artix-7 xc7a35tcpg236-1) at 100 MHz.
   The ASIC configuration is planned (GF180MCU) and not finished. See §11.
 
+```mermaid
+flowchart TB
+  pins["clk · reset · straps"] --> TOP
+
+  subgraph TOP["cpu_pipeline_top"]
+    direction TB
+    CLK["clk_gen · rst_gen"] --> CORE
+
+    subgraph CORE["Core"]
+      direction LR
+      ROM["boot ROM 4 KB"] --> IF
+      IMEM["IMEM 8 KB"] --> IF
+      IF --> ID --> EX --> MEM --> WB
+      EX --- MD["mul_div"]
+      EX --- MAC["mac_unit"]
+      MEM ---|"port A: loads, stores"| TCM["TCM 4 KB"]
+      TCM -->|"port B: operand stream"| MAC
+      MEM --- CSR["csr_file · mtimer"]
+      MEM -->|"other data addresses"| AXIM["dbus_axi_master<br/>AXI4 · timeout"]
+    end
+
+    CORE -->|"AXI4"| PS
+
+    subgraph PS["periph_subsys"]
+      direction LR
+      DEMUX["axi4_demux"] --> BR["axi4_to_apb4"]
+      BR --> APB["APB slots 0..15<br/>PLIC"]
+      DEMUX --> WIN["axi4_imem_win"]
+      DEMUX --> DEF["default slave<br/>(DECERR)"]
+    end
+
+    PS -->|"IMEM write (BOOT=rom)"| CORE
+    PS -->|"external interrupt (PLIC)"| CORE
+  end
+
+  classDef bootrom fill:#fde2c4,stroke:#d9822b,color:#000
+  class ROM,WIN bootrom
 ```
-                 +------------------------------ cpu_pipeline_top ----------------------------+
- clk, reset ---> | clk_gen, rst_gen                                                           |
- straps     ---> |                                                                            |
-                 |  IMEM 8 KB ---> IF -> ID -> EX -> MEM -> WB        csr_file, mtimer         |
-                 |  (boot ROM 4 KB,          |  |      |                                       |
-                 |   BOOT=rom)               |  |      +--> TCM 4 KB (port A: loads/stores)    |
-                 |                           |  +--> mac_unit <-- TCM port B (operand stream)  |
-                 |                           +--> mul_div                                      |
-                 |                                   |                                         |
-                 |                                   v other data addresses                    |
-                 |                          dbus_axi_master (AXI4, timeout)                    |
-                 |                                   |                                         |
-                 |   periph_subsys:  axi4_demux --+--> axi4_to_apb4 --> APB slots 0..15, PLIC  |
-                 |                                +--> axi4_imem_win (BOOT=rom) --> IMEM write  |
-                 |                                +--> default slave (DECERR)                   |
-                 +-----------------------------------------------------------------------------+
-```
+
+Orange blocks: BOOT=rom build only.
 
 ## 2. Pipeline
 

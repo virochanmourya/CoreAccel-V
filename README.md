@@ -18,7 +18,7 @@ flowchart TB
 
   subgraph CORE["CoreAccel-V core · RV32IM + Zicsr · 5-stage pipeline"]
     direction LR
-    ROM["Boot ROM 4 KB<br/>(BOOT=rom)"] -.-> IF
+    ROM["Boot ROM 4 KB"] --> IF
     IMEM["IMEM 8 KB"] --> IF
     IF --> ID --> EX --> MEM --> WB
     EX --- MD["MUL / DIV"]
@@ -30,8 +30,8 @@ flowchart TB
 
   CORE -->|"AXI4 master"| DEMUX["AXI4 demux"]
   DEMUX --> DEF["Default slave<br/>(DECERR)"]
-  DEMUX -.-> WIN["IMEM write window<br/>(BOOT=rom)"]
-  WIN -.->|"program load"| CORE
+  DEMUX --> WIN["IMEM write window"]
+  WIN -->|"program load"| CORE
   DEMUX --> BR["AXI4 → APB4 bridge"]
   BR --> APB
 
@@ -48,9 +48,12 @@ flowchart TB
   end
 
   PLIC -->|"external IRQ"| CORE
+
+  classDef bootrom fill:#fde2c4,stroke:#d9822b,color:#000
+  class ROM,WIN bootrom
 ```
 
-Dashed lines are only present in the `BOOT=rom` build.
+Orange blocks: BOOT=rom build only.
 
 ## Features
 
