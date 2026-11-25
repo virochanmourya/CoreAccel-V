@@ -11,27 +11,46 @@ Details: [docs/current_architecture.md](docs/current_architecture.md).
 
 ## Block diagram
 
+```mermaid
+flowchart TB
+  pins["clk · reset · straps"] --> clkrst["clk_gen + rst_gen"]
+  clkrst --> CORE
+
+  subgraph CORE["CoreAccel-V core · RV32IM + Zicsr · 5-stage pipeline"]
+    direction LR
+    ROM["Boot ROM 4 KB<br/>(BOOT=rom)"] -.-> IF
+    IMEM["IMEM 8 KB"] --> IF
+    IF --> ID --> EX --> MEM --> WB
+    EX --- MD["MUL / DIV"]
+    EX --- MAC["MAC unit<br/>72-bit accumulator"]
+    EX <-->|"port A"| TCM["TCM 4 KB<br/>dual-port"]
+    TCM -->|"port B"| MAC
+    MEM --- CSR["CSRs · traps<br/>mtimer"]
+  end
+
+  CORE -->|"AXI4 master"| DEMUX["AXI4 demux"]
+  DEMUX --> DEF["Default slave<br/>(DECERR)"]
+  DEMUX -.-> WIN["IMEM write window<br/>(BOOT=rom)"]
+  WIN -.->|"program load"| CORE
+  DEMUX --> BR["AXI4 → APB4 bridge"]
+  BR --> APB
+
+  subgraph APB["APB4 peripherals · 4 KB slots"]
+    direction LR
+    LEG["Legacy page"]
+    UART["UART0"]
+    SPI["SPI master"]
+    I2C["I2C master"]
+    GPIO["GPIO ×16"]
+    TMR["Timers · PWM · capture"]
+    SYS["Sysctl + watchdog"]
+    PLIC["PLIC"]
+  end
+
+  PLIC -->|"external IRQ"| CORE
 ```
-            clk, reset, straps
-                    |
-              clk_gen, rst_gen
-                    |
-  +------------------------- core ---------------------------+
-  |  IMEM 8 KB --> IF --> ID --> EX --> MEM --> WB            |
-  |  boot ROM 4 KB  |             |  |     |                  |
-  |  (BOOT=rom)     |   CSRs, traps, interrupts, mtimer       |
-  |                 |             |  |     +--> TCM 4 KB (A)  |
-  |                 |   MAC unit <+  +---> RV32M mul/div      |
-  |                 |      ^                                  |
-  |                 |      +----- TCM operand stream (B)      |
-  +-------------------------------------|---------------------+
-                                        | AXI4 master (other data addresses)
-                                   axi4_demux ---- default slave (DECERR)
-                                    |        \
-                              axi4_to_apb4    IMEM write window (BOOT=rom)
-                                    |
-     legacy page | UART0 | SPI | I2C | GPIO | timers/PWM/capture | sysctl+WDT | PLIC
-```
+
+Dashed lines are only present in the `BOOT=rom` build.
 
 ## Features
 
