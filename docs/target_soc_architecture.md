@@ -1,9 +1,11 @@
-# CoreAccel-V — Cache-Coherent Dual-Core SIMD DSP SoC
+> **FUTURE SCOPE, NOT IMPLEMENTED.** This is a design study for where CoreAccel-V could go after the current single-core SoC. None of the dual-core, cache, coherency, DMA, FFT, SIMD or atomics features in it exist in the RTL. For what is built and tested today, see [current_architecture.md](current_architecture.md). For the order of work, see the staged plan below and [ROADMAP.md](../ROADMAP.md).
 
-### *A Silicon-Proven Symmetric Multiprocessor for Real-Time Signal Processing*
+# CoreAccel-V — Cache-Coherent Dual-Core SIMD DSP SoC (future scope)
 
-> **Architecture Specification v1.0** · Target: Xilinx Artix-7 / SkyWater Sky130  
-> Classification: Complete Dual-Hart SoC with MESI Coherency, SIMD ALU, FFT Accelerator, and DMA
+### *A possible dual-core DSP SoC built on the CoreAccel-V core*
+
+> **Design study v1.0** · Planned targets: Xilinx Artix-7 (FPGA) / GlobalFoundries GF180MCU (ASIC)  
+> Scope: dual-hart SoC with MESI coherency, SIMD ALU, FFT accelerator and DMA. Not implemented.
 
 ---
 
@@ -43,10 +45,25 @@ CoreAccel-V is a **symmetric dual-core SoC** built around a custom RISC-V ISA (R
 | **Coherency** | Full MESI snoopy protocol with dirty intervention |
 | **Accelerators** | Radix-2 DIT FFT engine + multi-channel DMA |
 | **Atomics** | LR/SC + AMO for lock-free concurrency |
-| **Targets** | Artix-7 xc7a35t (FPGA) · Sky130 PDK (ASIC) |
+| **Targets** | Artix-7 xc7a35t (FPGA) · GF180MCU (ASIC; the area figures in §16 are older Sky130 estimates) |
 
 > [!IMPORTANT]
-> This document describes the **target state** of the SoC after all development phases are complete. Individual modules may be at varying stages of implementation.
+> This document describes a **possible target state**. None of it is implemented. The implemented design is a single RV32IM_Zicsr core with the CUSTOM-0 MAC, TCM, an AXI4/APB4 peripheral bus and a boot ROM (see [current_architecture.md](current_architecture.md)).
+
+### Staged plan
+
+Each stage builds on the one before it, and each ends with the same checks as
+the current design: a directed test suite, lint, and FPGA timing closed.
+
+| Stage | Adds | Depends on |
+|---|---|---|
+| 1. DMA | A memory-to-memory and peripheral DMA engine as a second AXI master, with a 2-master arbiter in front of the existing AXI4 demultiplexer (the place for it is described in `rtl/axi4_demux.sv`; PLIC sources 6 and up are free for it). | Current AXI4 interconnect |
+| 2. Cache + external memory | An external-memory slave on AXI and an L1 data cache in front of it only (TCM and peripherals stay uncached). | Stage 1 (DMA ordering rules) |
+| 3. FFT accelerator | A radix-2 FFT engine that reads and writes memory through the DMA. | Stages 1 and 2 |
+| 4. Dual core, shared memory | A second hart with its own IMEM/TCM and a shared memory region, using software locks (no hardware coherency yet). | Stages 1 and 2 |
+| 5. Coherency | MESI snooping between the two L1 data caches, plus LR/SC and AMOs. | Stage 4 |
+
+The ASIC (GF180) work for the single core is planned before these stages; see [ROADMAP.md](../ROADMAP.md).
 
 ---
 
@@ -62,7 +79,7 @@ graph TB
         SIMD0["SIMD ALU<br/>32/16/8-bit"]
         MAC0["MAC Unit<br/>72-bit Accum"]
         CSR0["CSR File<br/>mhartid=0"]
-        L1D0["L1 D-Cache<br/>1KB 2-Way"]
+        L1D0["L1 D-Cache<br/>256 B 2-Way"]
         SNOOP0["Snoop<br/>Controller"]
     end
 
@@ -72,7 +89,7 @@ graph TB
         SIMD1["SIMD ALU<br/>32/16/8-bit"]
         MAC1["MAC Unit<br/>72-bit Accum"]
         CSR1["CSR File<br/>mhartid=1"]
-        L1D1["L1 D-Cache<br/>1KB 2-Way"]
+        L1D1["L1 D-Cache<br/>256 B 2-Way"]
         SNOOP1["Snoop<br/>Controller"]
     end
 
@@ -312,11 +329,11 @@ graph TB
 
 ## 5. L1 Data Cache Architecture
 
-Each core has a private **1KB, 2-way set-associative, write-back L1 data cache** with MESI coherency state per line.
+Each core has a private **256-byte, 2-way set-associative, write-back L1 data cache** with MESI coherency state per line.
 
 ```mermaid
 graph TB
-    subgraph CACHE["L1 Data Cache — 1KB, 2-Way Set-Associative"]
+    subgraph CACHE["L1 Data Cache — 256 B, 2-Way Set-Associative"]
         subgraph ADDR["Address Decomposition — 32 bits"]
             TAG_F["Tag<br/>bits 31:7<br/>25 bits"]
             IDX_F["Index<br/>bits 6:4<br/>3 bits"]
@@ -394,7 +411,7 @@ graph TB
 
 | Parameter | Value |
 |---|---|
-| Total size | 1,024 bytes (1 KB) |
+| Total size | 256 bytes (8 sets × 2 ways × 16-byte lines) |
 | Associativity | 2-way set-associative |
 | Line size | 16 bytes (4 words) |
 | Number of sets | 8 |
@@ -677,7 +694,7 @@ graph TB
     end
 
     subgraph L1["L1 Data Cache — 1 cycle hit"]
-        DC["1KB 2-Way SA<br/>Write-Back, MESI<br/>16B lines, 8 sets"]
+        DC["256 B 2-Way SA<br/>Write-Back, MESI<br/>16B lines, 8 sets"]
     end
 
     subgraph BUS["AXI4-Lite Bus — arbitrated"]
@@ -713,7 +730,7 @@ graph TB
 | Level | Latency (cycles) | Capacity | Notes |
 |---|---|---|---|
 | Register File | 0 (combinational read) | 32 × 32-bit | Dual read ports, single write port |
-| L1 D-Cache (hit) | 1 | 1 KB | Tag check + data read in parallel |
+| L1 D-Cache (hit) | 1 | 256 B | Tag check + data read in parallel |
 | L1 D-Cache (miss, clean) | ~8–12 | — | Allocate + fill from bus |
 | L1 D-Cache (miss, dirty) | ~12–18 | — | Writeback + allocate + fill |
 | Shared DMEM | ~4–6 via bus | 4 KB | After arbitration |
@@ -1081,6 +1098,8 @@ graph TD
 
 ### ASIC Floorplan (Sky130 — 5mm × 5mm die)
 
+> Original Sky130 estimate, kept for reference. The ASIC plan is now GF180MCU and these numbers have not been redone.
+
 ```mermaid
 graph TB
     subgraph DIE["Die — 5.0mm x 5.0mm, ~4.5mm2 active"]
@@ -1146,6 +1165,8 @@ graph TB
 
 ### ASIC Area Budget — Sky130 PDK
 
+> Original Sky130 estimate, not redone for GF180MCU.
+
 | Module | Est. Area (mm²) | % of Die |
 |---|---|---|
 | Core 0 (pipeline + SIMD + MAC + CSR) | 0.80 | 17.8% |
@@ -1166,7 +1187,7 @@ graph TB
 
 ## 17. Technology Specifications
 
-| Parameter | FPGA Target | ASIC Target |
+| Parameter | FPGA Target | ASIC Target (Sky130 estimate; plan is now GF180MCU) |
 |---|---|---|
 | **Technology** | Xilinx Artix-7 (28nm) | SkyWater Sky130 (130nm) |
 | **Part** | xc7a35t-cpg236 | sky130_fd_sc_hd |
@@ -1175,8 +1196,8 @@ graph TB
 | **Die Size** | N/A (FPGA fabric) | ~5.0mm × 5.0mm |
 | **Active Area** | 86% LUT utilization | ~4.5 mm² |
 | **Power (est.)** | ~250 mW | ~150 mW |
-| **Tool Flow** | Vivado 2023.x | OpenLane 2 / OpenROAD |
-| **Verification** | Verilator + cocotb | DRC + LVS + STA |
+| **Tool Flow** | Vivado (today: 2026.1) | LibreLane / OpenROAD |
+| **Verification** | Directed tests in Vivado xsim, Verilator lint (as today) | DRC + LVS + STA |
 | **ISA** | RV32IM + A + P (subset) | RV32IM + A + P (subset) |
 | **Cores** | 2 | 2 |
 | **Coherency** | MESI Snoopy | MESI Snoopy |

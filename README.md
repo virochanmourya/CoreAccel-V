@@ -1,129 +1,158 @@
-<div align="center">
+# CoreAccel-V
 
-# 🚀 CoreAccel-V
+CoreAccel-V is a small RISC-V SoC written in SystemVerilog: a 5-stage
+RV32IM_Zicsr core with a custom multiply-accumulate (MAC) unit, tightly
+coupled data memory, an AXI4 / APB4 peripheral bus, the usual
+microcontroller peripherals and a UART boot loader. It targets the Digilent
+Basys 3 (Xilinx Artix-7) at 100 MHz today. The goal is to take a single core
+to GDS on the GF180MCU open PDK. See [ROADMAP.md](ROADMAP.md).
 
-**A custom RISC-V SoC Architecture featuring an integrated DSP/MAC unit for hardware-accelerated algorithms.**
+Details: [docs/current_architecture.md](docs/current_architecture.md).
 
-<p>
-  <img src="https://img.shields.io/badge/Architecture-RV32I%20%2B%20DSP-blue?style=for-the-badge" alt="Architecture"/>
-  <img src="https://img.shields.io/badge/Language-SystemVerilog-green?style=for-the-badge" alt="Language"/>
-  <img src="https://img.shields.io/badge/Target-Xilinx%20Artix--7-orange?style=for-the-badge" alt="Target"/>
-  <img src="https://img.shields.io/badge/Status-FPGA%20Validated-success?style=for-the-badge" alt="Status"/>
-</p>
+## Block diagram
 
-</div>
-
----
-
-## 📊 Architecture Block Diagram
-
-<p align="center">
-  <a href="docs/architecture_block_diagram.png">
-    <img src="docs/architecture_block_diagram.png" alt="CoreAccel-V Architecture" width="85%"/>
-  </a>
-</p>
-
-> 🔍 *For a high-resolution version, please see the [<u>Architecture PDF</u>](docs/architecture_block_diagram.pdf).*
-
----
-
-## ⚙️ Core Architecture Details
-
-* ⚡ **5-Stage RV32I Pipeline**: In-order execution with full 2-stage (`EX→EX` and `MEM→EX`) data forwarding and hazard detection logic.
-* 🧮 **CUSTOM-0 DSP MAC**: A dedicated 4-cycle Multiply-Accumulate coprocessor featuring a 72-bit signed accumulator with hardware saturation to prevent overflow during heavy FIR/IIR filtering.
-* 🧠 **Tightly Coupled Memory (TCM)**: Dual-port BRAM allowing simultaneous CPU execution and 1-cycle lookahead weight streaming directly into the DSP engine.
-
----
-
-## 🌟 Current Milestone: FPGA ECG Monitoring System
-
-CoreAccel-V has been successfully implemented and validated on physical FPGA hardware. For a detailed breakdown of the exact hardware structures running on the FPGA right now, see the [<u>Current Architecture Report</u>](docs/current_architecture.md).
-
-### 🫀 Application Focus: Real-Time Heart Monitoring
-To prove the computational efficiency of the architecture, I developed a complete hardware/software system for real-time ECG analysis:
-
-* 🩺 **Algorithm Implementation**: The firmware implements the **Pan-Tompkins algorithm** for QRS detection. It utilizes **dynamic thresholding** to precisely detect the R-peak and accurately calculates the BPM using the **R-R interval**.
-* 🏎️ **Hardware Acceleration**: The processor utilizes its custom DSP/MAC unit to analyze the ECG waveform and classify abnormalities (e.g., *Tachycardia*, *Bradycardia*, and *Irregular Rhythms*) with extremely low latency.
-* 🎯 **Accuracy Verified**: The processor's calculated BPM was cross-verified against a commercial pulse oximeter. The results rarely diverged, proving the mathematical and timing accuracy of the custom CPU core.
-* 🖥️ **Host GUI (`gui/`)**: Developed a high-performance Python/PyQt OpenGL GUI that interfaces with the processor via UART to stream and visualize the live ECG waveform and classification status.
-
-> 📝 **Note:** *The `sim/` folder containing the advanced testbenches is currently being updated with new verification features and will be pushed to the repository soon!*
-
----
-
-## 📈 Implementation Metrics (Xilinx Artix-7)
-
-The design successfully meets all physical constraints targeting a Xilinx Artix-7 device.
-
-| Metric | Value | Detail |
-| :--- | :---: | :--- |
-| **Max Frequency ($F_{max}$)** | **100.75 MHz** | Targeted 100 MHz clock with a WNS of +0.075 ns. |
-| **LUTs** | **2,449** | Highly optimized logic footprint. |
-| **Flip-Flops** | **1,595** | Efficient register utilization. |
-| **BRAMs** | **1** | Maps exactly to one RAMB36E1 tile. |
-| **DSPs** | **4** | Mapped cleanly to four DSP48E1 slices. |
-| **Power Consumption** | **0.189 W** | Dynamic: 0.117 W, Static: 0.072 W. |
-
-**Raw EDA Reports:**  
-🔗 [<u>Timing</u>](docs/timing_report.txt) | 🔗 [<u>Power</u>](docs/power_report.txt) | 🔗 [<u>Utilization</u>](docs/utilization_report.txt) | 🔗 [<u>Methodology</u>](docs/methodology_report.txt)
-
----
-
-## 🔮 Future Plans: Path to ASIC
-
-While the FPGA implementation proves the design works flawlessly in a physical system, the ultimate goal for CoreAccel-V is a tape-out as a **custom ASIC**. 
-
-The architecture will be expanded into a complete SoC, featuring advanced memory hierarchies, AXI interconnects, and external memory controllers. For a deep dive into the planned final design, please read the [<u>Target SoC Architecture</u>](docs/target_soc_architecture.md) document.
-
-* 🛠️ **Verification**: Finalize the advanced UVM/layered testbench suite to achieve **100% functional and code coverage**.
-* 📏 **RTL Refinement**: Refine the RTL to meet strict ASIC design rules.
-
----
-
-## 🛠️ Prerequisites
-Simulating and synthesizing the project requires:
-* **Hardware Simulation**: Verilator or QuestaSim
-* **Synthesis & Implementation**: Xilinx Vivado (Tested on 2023.2)
-* **Firmware Compilation**: RISC-V GNU Compiler Toolchain (`riscv64-unknown-elf-gcc`)
-* **Host GUI**: Python 3.10+ with `PyQt5` and `pyqtgraph`
-
----
-
-## 🚀 Quick Start & Simulation
-
-**1. Compile the Firmware**
-```bash
-cd firmware
-make all
+```
+            clk, reset, straps
+                    |
+              clk_gen, rst_gen
+                    |
+  +------------------------- core ---------------------------+
+  |  IMEM 8 KB --> IF --> ID --> EX --> MEM --> WB            |
+  |  boot ROM 4 KB  |             |  |     |                  |
+  |  (BOOT=rom)     |   CSRs, traps, interrupts, mtimer       |
+  |                 |             |  |     +--> TCM 4 KB (A)  |
+  |                 |   MAC unit <+  +---> RV32M mul/div      |
+  |                 |      ^                                  |
+  |                 |      +----- TCM operand stream (B)      |
+  +-------------------------------------|---------------------+
+                                        | AXI4 master (other data addresses)
+                                   axi4_demux ---- default slave (DECERR)
+                                    |        \
+                              axi4_to_apb4    IMEM write window (BOOT=rom)
+                                    |
+     legacy page | UART0 | SPI | I2C | GPIO | timers/PWM/capture | sysctl+WDT | PLIC
 ```
 
-**2. Launch the ECG Host GUI**
-```bash
-cd gui
-pip install -r requirements.txt
-python ecg_monitor.py
+## Features
+
+- **Core:** RV32I + M + Zicsr, machine mode, 5-stage in-order pipeline.
+  Forwarding to EX, a one-bubble load-use stall, branches resolved in EX
+  (2-cycle penalty), precise traps taken in MEM, MRET, and timer and
+  external (PLIC) interrupts.
+- **MAC unit (CUSTOM-0):** `acc += rs1 x TCM[rs2]` into a 72-bit
+  saturating accumulator. The second operand streams from the TCM's second
+  port. There are saturating and rounding/shifting reads and a sticky
+  overflow flag.
+- **Memory:** Harvard. 8 KB IMEM for code, and a 4 KB TCM (block RAM, dual
+  port) for all data and the stack.
+- **Bus:** AXI4 master with a 256-cycle timeout. The AXI4 demultiplexer has
+  a decode-error default slave, and an AXI4-to-APB4 bridge feeds 4 KB
+  peripheral slots. Every bus error becomes a precise access fault.
+- **Peripherals:** UART0 (FIFOs, interrupts), SPI master (modes 0-3, 2 chip
+  selects), I2C master, 16 GPIO with edge and level interrupts, two 32-bit
+  timers, 4 PWM outputs, 2 capture inputs, a PLIC, system control (IDs,
+  straps, reset cause, software reset, watchdog), and the original legacy
+  page (bit-bang I2C, telemetry UART, 7-segment display).
+- **Clock, reset, boot:** clock-select strap, reset generator with reset
+  causes, and two builds. The default build runs from IMEM. The BOOT=rom
+  build adds a boot ROM with a CRC-checked UART loader, a writable IMEM and
+  a host script (`scripts/load.py`).
+
+## Memory map
+
+| Address | What |
+|---|---|
+| 0x0000_0000 | IMEM, 8 KB (instruction fetch only) |
+| 0x0001_0000 | boot ROM, 4 KB (BOOT=rom build) |
+| 0x1000_0000 | IMEM write window, 8 KB, word writes only (BOOT=rom build) |
+| 0x8000_0000 | TCM, 4 KB (data, stack) |
+| 0xC000_0000 | legacy page; mtime/mtimecmp at 0xC000_0100 (core-local) |
+| 0xC000_1000 | UART0 |
+| 0xC000_2000 | SPI |
+| 0xC000_3000 | I2C |
+| 0xC000_4000 | GPIO |
+| 0xC000_5000 | timers, PWM, capture |
+| 0xC000_8000 | system control and watchdog |
+| 0xC400_0000 | PLIC |
+| other | access fault |
+
+Register maps: [docs/current_architecture.md](docs/current_architecture.md#6-peripherals-and-register-maps).
+
+## Tools
+
+| Tool | Used for |
+|---|---|
+| Vivado 2026.1 (xsim) | simulation, synthesis, implementation |
+| Verilator (in the LibreLane container `ghcr.io/librelane/librelane:3.0.17`, via Docker) | lint only |
+| xPack `riscv-none-elf-gcc` 15.2 | tests, boot ROM, firmware (`RISCV_PREFIX` in the Makefile) |
+| Python 3 | hex conversion, test generator, loader (`pyserial` for `load.py --port`) |
+
+The tool paths are variables at the top of the `Makefile`.
+
+## Commands
+
 ```
-*(Note: The Python application will automatically detect the active UART COM port connected to the FPGA.)*
+make regress                 # build and run every test, print a summary
+HOLD=2 WAIT=rand make regress  # the same with stores held in EX and random bus wait states
+make test T=boot_uart        # one test (tests/<name>.S, or a unit test tb/unit/tb_<name>.sv)
+make lint                    # Verilator -Wall: default, BOOT=rom and ASIC clock-mux configurations
+make bootrom                 # boot/loader.S -> build/boot/bootrom.hex
+make bit                     # default bitstream + reports -> build/bit/default/
+make bit-rom                 # BOOT=rom bitstream (115200 baud loader) -> build/bit/rom/
+make fw                      # legacy demo firmware -> build/fw/
+scripts/timing_sweep.sh <out_dir> <imem_hex>   # several implementation runs on one netlist
+```
 
----
+Loading a program on a BOOT=rom board (boot-mode switches at 0):
 
-## 📫 Contact & Author
+```
+python3 scripts/load.py --port /dev/ttyUSB1 program.elf
+```
 
-**Virochan Mourya — Final Year Undergraduate Engineering Student (Electronics & Communication)**
+## Status
 
-> 💡 *Currently seeking final-year internship / new-grad opportunities in RTL Design, ASIC Verification, or Computer Architecture.*
+| Item | Result |
+|---|---|
+| Tests | 60 (directed, unit and generated). All pass at HOLD = 0..3 with WAIT = 0, rand and 3 |
+| Lint | Verilator `-Wall`: 0 warnings in all three configurations |
+| Timing, default build | closed at 100 MHz: 6 of 6 implementation runs pass, worst WNS +0.138 ns |
+| Timing, BOOT=rom build | closed at 100 MHz: 6 of 6 runs pass, worst WNS +0.203 ns |
+| Utilisation (one run, demo image) | default 5443 LUTs, 4198 FFs, 1 BRAM tile, 8 DSP48E1; BOOT=rom 6830 LUTs (1432 as LUTRAM), 4326 FFs. See [docs/reports/](docs/reports/) |
+| On the board | not yet |
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/virochanmourya/) [![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](https://mail.google.com/mail/?view=cm&fs=1&to=virochanmourya@gmail.com)
+Timing is checked with six implementation runs (different placer and router
+directives) on the same netlist, because one run moves by about 0.15 ns.
 
----
+## Known limitations / not done yet
 
-## 📁 Repository Structure
+- **Not yet run on the board.** The bitstreams build cleanly, but nothing
+  has been tested on the Basys 3 yet, including `load.py` over the USB-UART.
+- **Provisional pins:** the strap, SPI, GPIO, PWM and capture pins in
+  `constraints/cpu_pipeline_top.xdc` are placeholders until the board
+  bring-up.
+- **No DMA, no cache, no external memory.** These are later stages; see
+  [ROADMAP.md](ROADMAP.md).
+- No `fence.i`. IMEM is writable only in the BOOT=rom build, through the
+  window.
+- The SPI-flash boot modes (2 and 3) fall back to the UART loader.
+- **ASIC items:** the IMEM and boot ROM need SRAM/ROM macros, and their
+  synchronous read needs a re-pipelined fetch stage. Also open: register
+  file reset, reset style and reset tree, a CDC review of the synchronisers,
+  and the pads. A pre-layout synthesis and timing study on GF180MCU has been
+  done; place and route has not.
+- `firmware/` is a legacy demo for the original peripheral page. It is not
+  part of the verification flow. See [firmware/README.md](firmware/README.md).
 
-```text
-CoreAccel-V/
-├── rtl/           # SystemVerilog source files (CPU pipeline, DSP unit, peripherals)
-├── firmware/      # C/Assembly source code, linker scripts, Makefiles
-├── gui/           # Python host application for visualizing UART telemetry
-├── constraints/   # Physical constraints used for the FPGA implementation
-└── docs/          # Block diagrams, architecture documentation, EDA reports
+## Repository layout
+
+```
+rtl/          SystemVerilog sources (rtl/rtl.f is the file list)
+tb/           testbench: harness, monitors, SVA, bus and device models, unit tests
+tests/        directed assembly tests (tests/common: harness macros, linker script)
+boot/         boot ROM loader and its linker script
+scripts/      hex conversion, test generator, loader, Vivado scripts
+constraints/  Basys 3 XDC
+docs/         architecture, future-scope study, implementation reports
+firmware/     legacy ECG demo firmware
+gui/          host GUI for the legacy demo's telemetry stream
 ```
