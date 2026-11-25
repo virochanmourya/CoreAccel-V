@@ -11,7 +11,12 @@
 #   make tests              build all test images only
 #   make sim-build          compile + elaborate the xsim snapshot
 #   make fw                 build firmware/ into build/fw/{imem,tcm}.hex
-#   make lint               Verilator -Wall lint (LibreLane container)
+#   make lint               Verilator -Wall lint (LibreLane container), default
+#                           and BOOT=rom configurations
+#   make bootrom            build the boot ROM (boot/loader.S -> build/boot/bootrom.hex)
+#   make test T=boot_uart   boot tests (tests/boot_*.S) run in the BOOT=rom
+#                           snapshot (tb_top_rom): the boot ROM loads the test
+#                           over UART0 from frames made by scripts/load.py
 #   BUS_VIP=1 make ...      add the Xilinx AXI protocol checker on the core's
 #                           AXI port (precompiled xsim library; separate snapshot)
 #   make clean
@@ -45,13 +50,15 @@ endif
 TB_DEPS := $(TB_SV) $(wildcard $(ROOT)/tb/*.svh)
 
 TEST_DIR    := $(ROOT)/tests
-TEST_COMMON := $(TEST_DIR)/common/test.h $(TEST_DIR)/common/link.ld
+TEST_COMMON := $(TEST_DIR)/common/test.h $(TEST_DIR)/common/link.ld $(TEST_DIR)/common/boot_prog.S
 # Generated tests (built from build/gen/<name>.S, see "generated tests" below)
 GEN_TESTS   := mext_random
 # Unit tests: tb/unit/tb_<name>.sv, a standalone xsim snapshot each (no CPU
 # program; HOLD/WAIT do not apply). Listed in TESTS so regress counts them.
 UNIT_TESTS  := clk_rst
 TESTS       := $(sort $(basename $(notdir $(wildcard $(TEST_DIR)/*.S)))) $(GEN_TESTS) $(UNIT_TESTS)
+# Boot tests: run in the BOOT=rom snapshot, loaded by the boot ROM over UART0
+BOOT_TESTS  := $(filter boot_%,$(TESTS))
 TEST_CFLAGS := $(ARCH) -nostdlib -nostartfiles -static \
                -I$(TEST_DIR)/common -T $(TEST_DIR)/common/link.ld
 
@@ -97,6 +104,25 @@ $(BUILD)/tests/mext_random/test.elf: $(GEN_DIR)/mext_random.S $(TEST_COMMON)
 .PHONY: FORCE
 FORCE:
 
+# ---------------------------------------------------------------- boot ROM
+BOOT_DIR  := $(BUILD)/boot
+BOOTROM   := $(BOOT_DIR)/bootrom.hex
+LOAD_PY   := $(ROOT)/scripts/load.py
+
+.PHONY: bootrom
+bootrom: $(BOOTROM)
+
+$(BOOTROM): $(ROOT)/boot/loader.S $(ROOT)/boot/boot.ld $(ELF2HEX)
+	@mkdir -p $(@D)
+	$(CC) -march=rv32i_zicsr -mabi=ilp32 -nostdlib -nostartfiles -static \
+	    -T $(ROOT)/boot/boot.ld -o $(BOOT_DIR)/loader.elf $(ROOT)/boot/loader.S
+	$(OBJDUMP) -d $(BOOT_DIR)/loader.elf > $(BOOT_DIR)/loader.dis
+	$(PYTHON) $(ELF2HEX) --rom $(BOOT_DIR)/loader.elf $(BOOT_DIR)
+
+# UART frame stream for a boot test (its imem.hex, plus tcm.hex if any)
+$(BUILD)/tests/%/frames.txt: $(BUILD)/tests/%/plusargs.txt $(LOAD_PY)
+	$(PYTHON) $(LOAD_PY) --emit $@ $(@D)/imem.hex $(wildcard $(@D)/tcm.hex)
+
 # ---------------------------------------------------------------- unit tests
 UNIT_DIR  := $(BUILD)/sim_unit
 UNIT_RTL_clk_rst := $(ROOT)/rtl/clk_mux_gf.sv $(ROOT)/rtl/clk_gen.sv $(ROOT)/rtl/rst_gen.sv
@@ -135,9 +161,20 @@ $(SIM_STAMP): $(RTL_SRC) $(RTL_F) $(TB_DEPS)
 	@touch $@
 	@echo "xsim snapshot ready: $(SIM_DIR)"
 
-# run_xsim <test-name>
+# Second snapshot from the same compiled library: BOOT=rom configuration
+SIM_ROM_STAMP := $(SIM_DIR)/.elab_rom.stamp
+$(SIM_ROM_STAMP): $(SIM_STAMP)
+	@$(XSIM_ENV) && xelab tb_top -s tb_top_rom -generic_top "BOOT_ROM=1" -timescale 1ns/1ps \
+	    -debug off $(VIP_LIBS) > xelab_rom.log 2>&1 \
+	    || { grep -E 'ERROR|WARNING' xelab_rom.log; exit 1; }
+	@! grep -E 'XSIM 43-(4127|4455)' $(SIM_DIR)/xelab_rom.log \
+	    || { echo "xsim ignored assertions (see above)"; exit 1; }
+	@touch $@
+	@echo "xsim snapshot ready: $(SIM_DIR) (tb_top_rom)"
+
+# run_xsim <test-name>[,<snapshot>,<extra plusargs>]
 define run_xsim
-	@$(XSIM_ENV) && xsim tb_top -R \
+	@$(XSIM_ENV) && xsim $(or $(2),tb_top) -R \
 	    $$(sed '/^$$/d; s/^/-testplusarg /' $(BUILD)/tests/$(1)/plusargs.txt) \
 	    -testplusarg TEST=$(1) \
 	    -testplusarg TIMEOUT=$(TIMEOUT) \
@@ -145,7 +182,7 @@ define run_xsim
 	    $(if $(WAIT),-testplusarg BUS_WAIT=$(WAIT)) \
 	    $(if $(BUS_SEED),-testplusarg BUS_SEED=$(BUS_SEED)) \
 	    -testplusarg SIGOUT=$(BUILD)/tests/$(1)/signature.txt \
-	    -testplusarg TRACE=$(BUILD)/tests/$(1)/commit.log \
+	    -testplusarg TRACE=$(BUILD)/tests/$(1)/commit.log $(3) \
 	    -log $(BUILD)/tests/$(1)/xsim.log > /dev/null 2>&1; \
 	grep -hE '^(RESULT|MISMATCH)' $(BUILD)/tests/$(1)/xsim.log \
 	    || echo "RESULT FAIL test=$(1) reason=no_result_line(see $(BUILD)/tests/$(1)/xsim.log)"
@@ -158,6 +195,9 @@ test: $(BUILD)/tests/$(T)/plusargs.txt $(UNIT_DIR)/$(T).stamp
 	    xsim tb_$(T) -R -log $(BUILD)/tests/$(T)/xsim.log > /dev/null 2>&1; \
 	grep -hE '^(RESULT|MISMATCH)' $(BUILD)/tests/$(T)/xsim.log \
 	    || echo "RESULT FAIL test=$(T) reason=no_result_line(see $(BUILD)/tests/$(T)/xsim.log)"
+else ifneq ($(filter $(T),$(BOOT_TESTS)),)
+test: $(BUILD)/tests/$(T)/frames.txt $(BOOTROM) $(SIM_ROM_STAMP)
+	$(call run_xsim,$(T),tb_top_rom,-testplusarg BOOTROM=$(BOOTROM) -testplusarg FRAMES=$(BUILD)/tests/$(T)/frames.txt)
 else
 test: $(BUILD)/tests/$(T)/plusargs.txt $(SIM_STAMP)
 	$(call run_xsim,$(T))

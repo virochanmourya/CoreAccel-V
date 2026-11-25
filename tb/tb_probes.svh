@@ -20,6 +20,9 @@
 `define PRB_ST_ADDR    dut.ex_mem_alu_result
 `define PRB_ST_DATA    dut.ex_mem_rs2_data
 
+// Boot ROM image (BOOT=rom snapshot only; dut.g_rom exists only there)
+`define PRB_ROM_ARR    dut.g_rom.u_rom.g_fpga.u_rom.mem
+
 // Data-bus error (load/store to an unmapped address), in MEM: it also traps
 // as a load/store access fault (cause 5/7)
 `define PRB_DBUS_ERR   dut.dbus_error
@@ -52,6 +55,8 @@
 
 // UART0 bit time (clocks per bit), for the harness's RX-pin driver
 `define PRB_UART0_DIV  dut.u_periph.u_uart0.div
+// UART0 RX overrun flag (sticky): the boot tests require it to stay 0
+`define PRB_UART0_OVR  dut.u_periph.u_uart0.overrun
 // SPI SCK divider, for the echo target's timing checks
 `define PRB_SPI_DIV    dut.u_periph.u_spi.div
 

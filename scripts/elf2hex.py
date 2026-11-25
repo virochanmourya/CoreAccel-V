@@ -2,6 +2,7 @@
 """Split a CoreAccel-V ELF into $readmemh word images.
 
 Usage: elf2hex.py <file.elf> <outdir>
+       elf2hex.py --rom <loader.elf> <outdir>   (boot ROM: writes bootrom.hex only)
 
 Writes into <outdir>:
   imem.hex      .text words for IMEM  (0x0000_0000, 8 KB)
@@ -10,11 +11,15 @@ Writes into <outdir>:
   plusargs.txt  KEY=VALUE lines consumed by the xsim harness
                 (DBUS_ERRORS / ILLEGAL_ERRORS / MISALIGNED_ERRORS=<n> if the ELF
                  defines expected_dbus_errors / _illegal_errors / _misaligned_errors,
-                 HOLD_EX_STORES=<n> if it defines test_hold_ex_stores)
+                 HOLD_EX_STORES=<n> if it defines test_hold_ex_stores;
+                BOOT=rom, BOOT_CASE=<n>, BOOT_MODE=<n>, TIMEOUT=<n> if it defines
+                test_boot_rom / test_boot_case / test_boot_mode / test_timeout)
 
 Only PT_LOAD segments with file contents are emitted, routed by physical
 address. Anything outside IMEM/TCM is an error, so a stray section can never
-silently produce a 2 GB binary or land in the wrong memory.
+silently produce a 2 GB binary or land in the wrong memory. The boot ROM
+region (0x0001_0000, 4 KB) is accepted only with --rom, and then it is the
+only one: the loader must be .text only.
 """
 import os
 import struct
@@ -24,6 +29,7 @@ REGIONS = {
     "imem": (0x00000000, 8 * 1024),
     "tcm": (0x80000000, 4 * 1024),
 }
+ROM_REGION = (0x00010000, 4 * 1024)
 
 
 def die(msg):
@@ -87,11 +93,30 @@ def write_hex(path, base, chunks):
 
 
 def main():
-    if len(sys.argv) != 3:
-        die("usage: elf2hex.py <file.elf> <outdir>")
-    elf, outdir = sys.argv[1], os.path.abspath(sys.argv[2])
+    argv = sys.argv[1:]
+    rom = argv[:1] == ["--rom"]
+    if rom:
+        argv = argv[1:]
+    if len(argv) != 2:
+        die("usage: elf2hex.py [--rom] <file.elf> <outdir>")
+    elf, outdir = argv[0], os.path.abspath(argv[1])
     with open(elf, "rb") as f:
         segments, sections, symbols = parse_elf(f.read())
+
+    if rom:
+        base, size = ROM_REGION
+        for addr, blob in segments:
+            if not (base <= addr and addr + len(blob) <= base + size):
+                die("ROM image: segment 0x%08x..0x%08x is outside the boot ROM"
+                    % (addr, addr + len(blob)))
+        for name in sections:
+            if name.startswith((".data", ".sdata", ".bss", ".sbss", ".rodata", ".srodata")) \
+                    and sections[name][5]:
+                die("ROM image: section %s is not allowed (the loader is .text only)" % name)
+        if not segments:
+            die("ROM image: no .text")
+        write_hex(os.path.join(outdir, "bootrom.hex"), base, segments)
+        return
 
     routed = {k: [] for k in REGIONS}
     for addr, blob in segments:
@@ -131,6 +156,12 @@ def main():
             f.write("".join("%08x\n" % w for w in exp))
         args += ["EXPECTED=%s" % path, "SIG_BEGIN=%08x" % sig_begin, "SIG_WORDS=%d" % len(exp)]
 
+    if "test_boot_rom" in symbols:         # run in the BOOT=rom snapshot (tb_top_rom)
+        args.append("BOOT=rom")
+    for sym, key in (("test_boot_case", "BOOT_CASE"), ("test_boot_mode", "BOOT_MODE"),
+                     ("test_timeout", "TIMEOUT")):   # TIMEOUT: wins over the Makefile's
+        if sym in symbols:
+            args.append("%s=%d" % (key, symbols[sym]))
     if "test_hold_ex_stores" in symbols:   # listed before the Makefile's HOLD, so it wins
         args.append("HOLD_EX_STORES=%d" % symbols["test_hold_ex_stores"])
     if "test_bus_wait" in symbols:         # same: wins over the Makefile's WAIT
