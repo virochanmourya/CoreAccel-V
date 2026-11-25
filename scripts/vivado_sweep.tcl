@@ -1,8 +1,11 @@
 # Multi-run timing measurement, driven by scripts/timing_sweep.sh.
 #
 #   synth: vivado -mode batch -source vivado_sweep.tcl \
-#              -tclargs synth <repo_root> <out_dir> <imem_hex>
+#              -tclargs synth <repo_root> <out_dir> <imem_hex> [<bootrom_hex> <generics>]
 #          Synthesises once and writes <out_dir>/post_synth.dcp.
+#          BOOT=rom build: bootrom_hex is copied in as bootrom.hex and
+#          generics is a space-separated NAME=VALUE list for the top
+#          (e.g. "RESET_VECTOR=65536 IMEM_WRITABLE=1").
 #   impl:  vivado -mode batch -source vivado_sweep.tcl \
 #              -tclargs impl <dcp> <out_dir> <place_directive> <route_directive>
 #          Same flow as vivado_impl.tcl (opt, place, phys_opt, route) with the
@@ -24,6 +27,11 @@ if {$mode eq "synth"} {
     # imem.hex / tcm.hex in the run directory match the RTL default INIT_FILE names.
     file copy -force $imem $out/imem.hex
     set fh [open $out/tcm.hex w]; puts $fh "00000000"; close $fh
+    set gen {}
+    if {[llength $argv] > 5} {
+        file copy -force [file normalize [lindex $argv 4]] $out/bootrom.hex
+        foreach g [lindex $argv 5] { lappend gen -generic $g }
+    }
     set fh [open $root/rtl/rtl.f]
     foreach f [split [read $fh] "\n"] {
         set f [string trim $f]
@@ -31,7 +39,7 @@ if {$mode eq "synth"} {
     }
     close $fh
     read_xdc $root/constraints/cpu_pipeline_top.xdc
-    synth_design -top cpu_pipeline_top -part $part
+    synth_design -top cpu_pipeline_top -part $part {*}$gen
     write_checkpoint -force $out/post_synth.dcp
     report_utilization -file $out/utilization_synth.rpt
     exit 0

@@ -18,7 +18,15 @@ module cpu_pipeline_top #(
     parameter int    SPI_NCS    = 2,       // SPI chip selects
     parameter int    GPIO_W     = 16,      // GPIO pins
     parameter int    TMR_NPWM   = 4,       // PWM outputs
-    parameter int    TMR_NCAP   = 2        // input-capture pins
+    parameter int    TMR_NCAP   = 2,       // input-capture pins
+    parameter int    BAUD_RATE  = 115_200, // reset baud rate of UART0 and the legacy UART
+    // Boot configuration. Default (FPGA board build): reset at 0x0000_0000,
+    // IMEM is a preloaded LUT-ROM, no boot ROM. BOOT=rom builds set
+    // RESET_VECTOR = 0x0001_0000 (boot ROM present, UART loader) and
+    // IMEM_WRITABLE = 1; the ASIC configuration also uses IMEM_WRITABLE = 1.
+    parameter logic [31:0] RESET_VECTOR = 32'h0000_0000,
+    parameter bit    IMEM_WRITABLE = 1'b0, // IMEM write port + data-bus window at 0x1000_0000
+    parameter        BOOTROM_INIT  = "bootrom.hex"  // boot ROM image (`make bootrom`)
 )(
     input  logic       clk,            // reference clock (to clk_gen)
     input  logic       reset,          // reset pin, active high, asynchronous
@@ -66,6 +74,12 @@ module cpu_pipeline_top #(
     localparam int          IMEM_AW  = $clog2(IMEM_WORDS);  // IMEM word-address bits
     localparam int          TCM_AW   = $clog2(TCM_WORDS);   // TCM word-address bits
     localparam logic [31:0] TCM_BASE = 32'h8000_0000;
+    // Boot ROM: 4 KB at 0x0001_0000 (instruction side only), present when
+    // the reset vector points into it.
+    localparam int          ROM_WORDS = 1024;
+    localparam int          ROM_AW    = $clog2(ROM_WORDS);
+    localparam logic [31:0] ROM_BASE  = 32'h0001_0000;
+    localparam bit          HAS_ROM   = (RESET_VECTOR[31:ROM_AW+2] == ROM_BASE[31:ROM_AW+2]);
 
     // ---- Clock and reset ----
     logic        clk_core;        // core clock (clk_gen output)
@@ -349,7 +363,7 @@ module cpu_pipeline_top #(
     //  IF STAGE
     // ========================================================================
 
-    pc_pipe u_pc (
+    pc_pipe #(.RESET_VECTOR (RESET_VECTOR)) u_pc (
         .clk       (clk_core),
         .reset     (rst_sys),
         .pc_write  (pc_write),
@@ -359,18 +373,51 @@ module cpu_pipeline_top #(
     );
 
     // Instruction access fault: the IMEM is 4*IMEM_WORDS bytes at
-    // 0x0000_0000; a PC outside it fetches nothing valid (the instruction
-    // is squashed in ID and traps with cause 1 if it reaches MEM).
-    assign if_fetch_fault = (pc_current[31:IMEM_AW+2] != '0);
+    // 0x0000_0000 (plus the boot ROM, 4 KB at 0x0001_0000, when present);
+    // a PC outside them fetches nothing valid (the instruction is squashed
+    // in ID and traps with cause 1 if it reaches MEM).
+    logic [31:0] imem_instr;
+    logic        imem_we;                 // IMEM write port (data-bus window)
+    logic [IMEM_AW-1:0] imem_waddr;
+    logic [31:0] imem_wdata;
 
     imem_wrap #(
         .MEM_TECH  (MEM_TECH),
         .WORDS     (IMEM_WORDS),
-        .INIT_FILE (IMEM_INIT)
+        .INIT_FILE (IMEM_INIT),
+        .WRITABLE  (IMEM_WRITABLE)
     ) u_imem (
+        .clk         (clk_core),
+        .we          (imem_we),
+        .waddr       (imem_waddr),
+        .wdata       (imem_wdata),
         .word_addr   (pc_current[IMEM_AW+1:2]),
-        .instruction (if_instruction)
+        .instruction (imem_instr)
     );
+
+    generate
+        if (HAS_ROM) begin : g_rom
+            logic [31:0] rom_instr;
+            logic        in_rom;
+            if (!IMEM_WRITABLE) begin : g_cfg_error
+                $error("cpu_pipeline_top: the boot ROM's UART loader needs IMEM_WRITABLE = 1");
+            end
+            bootrom_wrap #(
+                .MEM_TECH  (MEM_TECH),
+                .WORDS     (ROM_WORDS),
+                .INIT_FILE (BOOTROM_INIT)
+            ) u_rom (
+                .word_addr   (pc_current[ROM_AW+1:2]),
+                .instruction (rom_instr)
+            );
+            assign in_rom         = (pc_current[31:ROM_AW+2] == ROM_BASE[31:ROM_AW+2]);
+            assign if_instruction = in_rom ? rom_instr : imem_instr;
+            assign if_fetch_fault = ~in_rom & (pc_current[31:IMEM_AW+2] != '0);
+        end else begin : g_no_rom
+            assign if_instruction = imem_instr;
+            assign if_fetch_fault = (pc_current[31:IMEM_AW+2] != '0);
+        end
+    endgenerate
 
     // ========================================================================
     //  IF/ID Pipeline Register
@@ -908,6 +955,9 @@ module cpu_pipeline_top #(
     //   0xC000_0100 / 0x104        mtime lo / hi           (core-local)
     //   0xC000_0108 / 0x10C        mtimecmp lo / hi        (core-local)
     //   0xC000_0FFC                simulation halt "tohost" (core-local, writes ignored)
+    //   0x1000_0000 - 0x1000_1FFF  IMEM write window (IMEM_WRITABLE only, on the AXI
+    //                              bus): word writes land in IMEM, reads SLVERR.
+    //                              Without IMEM_WRITABLE it is DECERR like any hole.
     //   anything else              AXI4 data bus (periph_subsys): peripherals on
     //                              APB, holes -> DECERR; an error response or a
     //                              timeout is a load/store access fault
@@ -961,12 +1011,14 @@ module cpu_pipeline_top #(
 
     periph_subsys #(
         .CLK_FREQ  (CLK_FREQ),
-        .BAUD_RATE (115_200),
+        .BAUD_RATE (BAUD_RATE),
         .SEG_EN    (SEG_EN),
         .SPI_NCS   (SPI_NCS),
         .GPIO_W    (GPIO_W),
         .TMR_NPWM  (TMR_NPWM),
-        .TMR_NCAP  (TMR_NCAP)
+        .TMR_NCAP  (TMR_NCAP),
+        .IMEM_WIN  (IMEM_WRITABLE),
+        .IMEM_AW   (IMEM_AW)
     ) u_periph (
         .clk       (clk_core),
         .reset     (rst_sys),
@@ -1008,7 +1060,10 @@ module cpu_pipeline_top #(
         .pll_lock      (pll_lock),
         .rst_req_wdt   (rst_req_wdt),
         .rst_req_sw    (rst_req_sw),
-        .plic_eip      (plic_eip)
+        .plic_eip      (plic_eip),
+        .imem_we       (imem_we),
+        .imem_waddr    (imem_waddr),
+        .imem_wdata    (imem_wdata)
     );
 
     // ---- Open-drain I2C pads (driven by the legacy page's GPIO latch) ----

@@ -107,6 +107,7 @@ module axi4_demux #(
 
     localparam int SW  = $clog2(NS + 1);
     localparam int DEF = NS;              // index of the default slave
+    localparam int IW  = (NS > 1) ? $clog2(NS) : 1;   // real-slave index bits
 
     function automatic logic [SW-1:0] decode(input logic [31:0] a);
         decode = SW'(DEF);
@@ -133,9 +134,9 @@ module axi4_demux #(
 
     always_comb begin
         aw_rdy_sel = 1'b1;                        // default slave: always ready
-        if (aw_sel != SW'(DEF)) aw_rdy_sel = m_awready[aw_sel];
+        if (aw_sel != SW'(DEF)) aw_rdy_sel = m_awready[aw_sel[IW-1:0]];
         w_rdy_sel = 1'b1;
-        if (w_sel != SW'(DEF)) w_rdy_sel = m_wready[w_sel];
+        if (w_sel != SW'(DEF)) w_rdy_sel = m_wready[w_sel[IW-1:0]];
     end
 
     // AW: only when no write is in flight.
@@ -153,9 +154,9 @@ module axi4_demux #(
         m_awvalid = '0;
         m_wvalid  = '0;
         if (!w_busy && s_awvalid && !wait_inj && aw_sel != SW'(DEF))
-            m_awvalid[aw_sel] = 1'b1;
+            m_awvalid[aw_sel[IW-1:0]] = 1'b1;
         if (w_open && s_wvalid && !wait_inj && w_sel != SW'(DEF))
-            m_wvalid[w_sel] = 1'b1;
+            m_wvalid[w_sel[IW-1:0]] = 1'b1;
     end
 
     always_ff @(posedge clk) begin
@@ -195,10 +196,10 @@ module axi4_demux #(
                 s_bresp  = 2'b11;                 // DECERR
                 s_bid    = def_bid;
             end else begin
-                s_bvalid = m_bvalid[w_sel_q];
-                s_bresp  = m_bresp[w_sel_q];
-                s_bid    = m_bid[w_sel_q];
-                m_bready[w_sel_q] = s_bready;
+                s_bvalid = m_bvalid[w_sel_q[IW-1:0]];
+                s_bresp  = m_bresp[w_sel_q[IW-1:0]];
+                s_bid    = m_bid[w_sel_q[IW-1:0]];
+                m_bready[w_sel_q[IW-1:0]] = s_bready;
             end
         end
     end
@@ -216,7 +217,7 @@ module axi4_demux #(
 
     always_comb begin
         ar_rdy_sel = 1'b1;
-        if (ar_sel != SW'(DEF)) ar_rdy_sel = m_arready[ar_sel];
+        if (ar_sel != SW'(DEF)) ar_rdy_sel = m_arready[ar_sel[IW-1:0]];
     end
 
     assign s_arready = ~r_busy & ~wait_inj & ar_rdy_sel;
@@ -226,7 +227,7 @@ module axi4_demux #(
     always_comb begin
         m_arvalid = '0;
         if (!r_busy && s_arvalid && !wait_inj && ar_sel != SW'(DEF))
-            m_arvalid[ar_sel] = 1'b1;
+            m_arvalid[ar_sel[IW-1:0]] = 1'b1;
     end
 
     always_ff @(posedge clk) begin
@@ -261,12 +262,12 @@ module axi4_demux #(
                 s_rlast  = (def_r_left == 8'd0);
                 s_rid    = def_rid;
             end else begin
-                s_rvalid = m_rvalid[r_sel_q];
-                s_rdata  = m_rdata[r_sel_q];
-                s_rresp  = m_rresp[r_sel_q];
-                s_rlast  = m_rlast[r_sel_q];
-                s_rid    = m_rid[r_sel_q];
-                m_rready[r_sel_q] = s_rready;
+                s_rvalid = m_rvalid[r_sel_q[IW-1:0]];
+                s_rdata  = m_rdata[r_sel_q[IW-1:0]];
+                s_rresp  = m_rresp[r_sel_q[IW-1:0]];
+                s_rlast  = m_rlast[r_sel_q[IW-1:0]];
+                s_rid    = m_rid[r_sel_q[IW-1:0]];
+                m_rready[r_sel_q[IW-1:0]] = s_rready;
             end
         end
     end

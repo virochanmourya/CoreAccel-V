@@ -6,6 +6,9 @@
 # usage: scripts/timing_sweep.sh <out_dir> <imem_hex>
 #   imem_hex: IMEM image (IMEM is LUT-ROM, so keep it fixed when comparing).
 #   RUNS:     space-separated place:route pairs (default: three below).
+#   BOOTROM, GENERICS: BOOT=rom build: the boot ROM image (build/boot/
+#             bootrom.hex) and the top-level generics, e.g.
+#             GENERICS="RESET_VECTOR=65536 IMEM_WRITABLE=1".
 #   Results:  <out_dir>/summary.txt, <out_dir>/run<N>/{result,paths}.csv
 #             and the usual Vivado reports in each run directory.
 set -u
@@ -21,7 +24,7 @@ source "$VIVADO_SETTINGS" >/dev/null 2>&1
 mkdir -p "$OUT"
 
 ( cd "$OUT" && vivado -mode batch -nojournal -log synth.log -source "$TCL" \
-      -tclargs synth "$ROOT" "$OUT" "$IMEM" > /dev/null 2>&1 )
+      -tclargs synth "$ROOT" "$OUT" "$IMEM" ${BOOTROM:+"$(realpath "$BOOTROM")" "$GENERICS"} > /dev/null 2>&1 )
 [ -f "$OUT/post_synth.dcp" ] || { echo "synthesis failed: see $OUT/synth.log"; exit 1; }
 
 n=0; pids=()

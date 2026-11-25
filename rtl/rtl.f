@@ -16,6 +16,7 @@ rtl/tcm_ram.sv
 rtl/instruction_memory_pipe.sv
 rtl/tcm_wrap.sv
 rtl/imem_wrap.sv
+rtl/bootrom_wrap.sv
 rtl/pc_pipe.sv
 rtl/if_id_reg.sv
 rtl/id_ex_reg.sv
@@ -35,6 +36,7 @@ rtl/apb_timer.sv
 rtl/apb_sysctl.sv
 rtl/dbus_axi_master.sv
 rtl/axi4_demux.sv
+rtl/axi4_imem_win.sv
 rtl/axi4_to_apb4.sv
 rtl/apb_legacy_page.sv
 rtl/periph_subsys.sv

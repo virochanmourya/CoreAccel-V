@@ -57,6 +57,11 @@ TEST_CFLAGS := $(ARCH) -nostdlib -nostartfiles -static \
 
 ELF2HEX := $(ROOT)/scripts/elf2hex.py
 
+# BOOT=rom configuration (boot ROM at 0x0001_0000, UART loader, writable IMEM).
+# The same values go to lint and Vivado; the ROM xsim snapshot sets them
+# through tb_top's BOOT_ROM parameter.
+BOOT_ROM_GENERICS := RESET_VECTOR=65536 IMEM_WRITABLE=1
+
 # ---------------------------------------------------------------- tests
 .PHONY: tests
 tests: $(foreach t,$(TESTS),$(BUILD)/tests/$(t)/plusargs.txt)
@@ -187,6 +192,9 @@ $(FW_OUT)/plusargs.txt: $(FW_OUT)/firmware.elf $(ELF2HEX)
 lint:
 	docker run --rm -u $$(id -u):$$(id -g) -v $(ROOT):/w:ro -w /w $(LIBRELANE_IMAGE) \
 	    verilator --lint-only -Wall --top-module cpu_pipeline_top $(shell cat $(RTL_F))
+	@# BOOT=rom configuration: boot ROM, fetch mux, writable IMEM + window
+	docker run --rm -u $$(id -u):$$(id -g) -v $(ROOT):/w:ro -w /w $(LIBRELANE_IMAGE) \
+	    verilator --lint-only -Wall --top-module cpu_pipeline_top $(BOOT_ROM_GENERICS:%=-G%) $(shell cat $(RTL_F))
 	@# the glitch-free mux branch of clk_gen is not elaborated in the FPGA build
 	docker run --rm -u $$(id -u):$$(id -g) -v $(ROOT):/w:ro -w /w $(LIBRELANE_IMAGE) \
 	    verilator --lint-only -Wall --top-module clk_gen -GCLK_TECH='"ASIC"' rtl/clk_mux_gf.sv rtl/clk_gen.sv

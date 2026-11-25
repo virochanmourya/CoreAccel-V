@@ -5,8 +5,12 @@
 //
 //   AXI4 (from dbus_axi_master)
 //     -> axi4_demux: 0xC000_0000-0xC000_FFFF and the PLIC region
-//                    0xC400_0000-0xC43F_FFFF go to slave 0; anything else
-//                    -> built-in default slave (DECERR)
+//                    0xC400_0000-0xC43F_FFFF go to slave 0; with IMEM_WIN,
+//                    0x1000_0000-0x1000_1FFF goes to slave 1; anything
+//                    else -> built-in default slave (DECERR)
+//     -> slave 1 (IMEM_WIN = 1 only): axi4_imem_win, the boot loader's IMEM
+//          write window (word writes -> IMEM write port; reads SLVERR).
+//          Proposal numbering: S3 (S1 = APB bridge, S2 = DMA, not built).
 //     -> slave 0: axi4_to_apb4, APB4 select per 4 KB slot:
 //          slot 0  0xC000_0000  legacy page (GPIO bit-bang I2C, UART TX, 7-seg)
 //          slot 1  0xC000_1000  UART0 (TX/RX, FIFOs, irq)
@@ -43,7 +47,9 @@ module periph_subsys #(
     parameter int TMR_NPWM       = 4,
     parameter int TMR_NCAP       = 2,
     parameter int PLIC_NSRC  = 16,
-    parameter int PLIC_PRIO_W = 3
+    parameter int PLIC_PRIO_W = 3,
+    parameter bit IMEM_WIN    = 1'b0,   // IMEM write window at 0x1000_0000
+    parameter int IMEM_AW     = 11      // IMEM word-address bits (window size)
 )(
     input  logic        clk,
     input  logic        reset,         // rst_sys
@@ -112,7 +118,12 @@ module periph_subsys #(
     output logic        rst_req_sw,
 
     // ---- PLIC output (to the core's MEIP) ----
-    output logic        plic_eip
+    output logic        plic_eip,
+
+    // ---- IMEM write port (IMEM_WIN = 1; tied to 0 otherwise) ----
+    output logic               imem_we,
+    output logic [IMEM_AW-1:0] imem_waddr,
+    output logic [31:0]        imem_wdata
 );
 
     // PLIC source map: 1 = UART0, 2 = SPI, 3 = I2C, 4 = GPIO, 5 = timers;
@@ -129,8 +140,13 @@ module periph_subsys #(
     end
 
     // ------------------------------------------------------------ AXI demux
-    localparam int NS = 1;      // slave 0: APB bridge
-    localparam int NR = 2;
+    // slave 0: APB bridge; slave 1: IMEM window (IMEM_WIN only). The window
+    // region is always listed; without the window it names the default
+    // slave (index NS), so 0x1000_0000 stays DECERR exactly as before.
+    localparam int NS = IMEM_WIN ? 2 : 1;
+    localparam int NR = 3;
+    localparam logic [31:0] WIN_BASE = 32'h1000_0000;
+    localparam logic [31:0] WIN_MASK = ~(32'(4 << IMEM_AW) - 32'd1);
 
     logic [NS-1:0]       d_awvalid, d_awready, d_wvalid, d_wready, d_bvalid, d_bready;
     logic [NS-1:0]       d_arvalid, d_arready, d_rvalid, d_rready, d_rlast;
@@ -147,9 +163,9 @@ module periph_subsys #(
     axi4_demux #(
         .NS          (NS),
         .NR          (NR),
-        .REGION_BASE ({32'hC400_0000, 32'hC000_0000}),
-        .REGION_MASK ({32'hFFC0_0000, 32'hFFFF_0000}),
-        .REGION_SLV  ({8'd0, 8'd0})
+        .REGION_BASE ({WIN_BASE, 32'hC400_0000, 32'hC000_0000}),
+        .REGION_MASK ({WIN_MASK, 32'hFFC0_0000, 32'hFFFF_0000}),
+        .REGION_SLV  ({8'(IMEM_WIN ? 1 : NS), 8'd0, 8'd0})
     ) u_demux (
         .clk (clk), .reset (reset), .wait_inj (wait_inj),
         .s_awvalid (s_awvalid), .s_awready (s_awready), .s_awaddr (s_awaddr), .s_awlen (s_awlen),
@@ -171,6 +187,30 @@ module periph_subsys #(
         .m_rvalid (d_rvalid), .m_rready (d_rready), .m_rdata (d_rdata), .m_rresp (d_rresp),
         .m_rlast (d_rlast), .m_rid (d_rid)
     );
+
+    // ------------------------------------------------------------ IMEM window
+    generate
+        if (IMEM_WIN) begin : g_imem_win
+            axi4_imem_win #(.AW (IMEM_AW)) u_imem_win (
+                .clk (clk), .reset (reset),
+                .s_awvalid (d_awvalid[1]), .s_awready (d_awready[1]), .s_awaddr (d_awaddr),
+                .s_awlen (d_awlen), .s_awid (d_awid),
+                .s_wvalid (d_wvalid[1]), .s_wready (d_wready[1]), .s_wdata (d_wdata),
+                .s_wstrb (d_wstrb), .s_wlast (d_wlast),
+                .s_bvalid (d_bvalid[1]), .s_bready (d_bready[1]), .s_bresp (d_bresp[1]),
+                .s_bid (d_bid[1]),
+                .s_arvalid (d_arvalid[1]), .s_arready (d_arready[1]), .s_arlen (d_arlen),
+                .s_arid (d_arid),
+                .s_rvalid (d_rvalid[1]), .s_rready (d_rready[1]), .s_rdata (d_rdata[1]),
+                .s_rresp (d_rresp[1]), .s_rlast (d_rlast[1]), .s_rid (d_rid[1]),
+                .imem_we (imem_we), .imem_waddr (imem_waddr), .imem_wdata (imem_wdata)
+            );
+        end else begin : g_no_imem_win
+            assign imem_we    = 1'b0;
+            assign imem_waddr = '0;
+            assign imem_wdata = '0;
+        end
+    endgenerate
 
     // ------------------------------------------------------------ AXI -> APB4
     localparam int NSLOT = 16;
